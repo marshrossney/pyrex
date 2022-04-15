@@ -56,7 +56,6 @@ def get_workspace_version(workspace: str, reference: str | None = None) -> str:
 
     return version
 
-
 class switch_dir:
     """Context manager for changing to *existing* directory."""
 
@@ -70,7 +69,6 @@ class switch_dir:
 
     def __exit__(self, etype, value, traceback):
         os.chdir(self.old)
-
 
 class create_and_enter_dir:
     """Create and enter new directory, cleaning up if an exception is raised."""
