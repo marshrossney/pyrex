@@ -1,5 +1,5 @@
 {
-    "python": {
+    "python-poetry": {
         "repository": "https://github.com/marshrossney/pyrepcon.git",
         "branch": "python-poetry"
     }

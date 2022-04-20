@@ -7,14 +7,10 @@ from __future__ import annotations
 
 from distutils.util import strtobool
 import logging
-import os
 import pathlib
+import os
 import subprocess
-from typing import TypeAlias
-
-Path: TypeAlias = pathlib.Path
-PathLike: TypeAlias = str | os.PathLike
-CalledProcessError: TypeAlias = subprocess.CalledProcessError
+from typing import Union
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +18,7 @@ log = logging.getLogger(__name__)
 class GitError(Exception):
     """Handles errors from calling git commands using subprocess."""
 
-    def __init__(self, error: CalledProcessError):
+    def __init__(self, error: subprocess.CalledProcessError):
         if type(error.cmd) is list:
             error.cmd = " ".join(error.cmd)
         message = f"""The git command '{error.cmd}' returned non-zero exit status {error.returncode}
@@ -42,32 +38,32 @@ def git_run_command(args: list[str]):
             text=True,
             check=True,
         ).stdout
-    except CalledProcessError as e:
+    except subprocess.CalledProcessError as e:
         raise GitError(e)
 
 
-def git_dir() -> Path:
+def git_dir() -> pathlib.Path:
     """Returns path to working tree (.git/) directory."""
     result = git_run_command(["rev-parse", "--git-dir"])
-    return Path(result.strip("\n"))
+    return pathlib.Path(result.strip("\n"))
 
 
-def root_dir() -> Path:
+def root_dir() -> pathlib.Path:
     """Returns absolute path to top-level 'root' directory, containing '.git/'."""
     result = git_run_command(["rev-parse", "--show-toplevel"])
-    return Path(result.strip("\n"))
+    return pathlib.Path(result.strip("\n"))
 
 
-def cwd_relative_to_root() -> Path:
+def cwd_relative_to_root() -> pathlib.Path:
     """Returns path to current working directory relative to the root of the repo."""
     result = git_run_command(["rev-parse", "--show-prefix"])
-    return Path(result.strip("\n"))
+    return pathlib.Path(result.strip("\n"))
 
 
-def root_relative_to_cwd() -> Path:
+def root_relative_to_cwd() -> pathlib.Path:
     """Returns path to root of the repo relative to the current working directory."""
     result = git_run_command(["rev-parse", "--show-cdup"])
-    return Path(result.strip("\n"))
+    return pathlib.Path(result.strip("\n"))
 
 
 def is_inside_work_tree() -> bool:
@@ -163,7 +159,9 @@ def checkout_commit(commit: str) -> None:
     _ = git_run_command(["checkout", commit])
 
 
-def checkout_workspace(commit: str, source: PathLike, dest: PathLike) -> None:
+def checkout_workspace(
+    commit: str, source: Union[str, os.PathLike], dest: Union[str, os.PathLike] = "."
+) -> None:
     """Checks out a workspace from a given commit at a new location."""
     _ = git_run_command(
         ["checkout", "--work-tree", str(source), commit, "--", str(dest)]
