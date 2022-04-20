@@ -11,7 +11,6 @@ from typing import ClassVar, Union  # TypeAlias  Python 3.10
 def curr_datetime():
     return datetime.datetime.now().strftime("%G%m%dT%H%M%S")  # ISO 8601 basic
 
-
 class switch_dir:
     """Context manager for changing to *existing* directory."""
 
