@@ -29,29 +29,33 @@ class GitError(Exception):
         self.error = error
 
 
-def git_run_command(args: list[str]):
-    """Runs 'git *args' through subprocess.run, returning the contents of stdout."""
+def git_run_command(*args: str, capture_output=True):
+    """Runs 'git *args' through subprocess.run, returning the contents of stdout with the newline character stripped."""
     try:
-        return subprocess.run(
-            ["git"] + args,
-            capture_output=True,
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=capture_output,
             text=True,
             check=True,
-        ).stdout
+        )
     except subprocess.CalledProcessError as e:
         raise GitError(e)
+
+    else:
+        if capture_output:
+            return result.stdout.strip("\n")
 
 
 def git_dir() -> pathlib.Path:
     """Returns path to working tree (.git/) directory."""
-    result = git_run_command(["rev-parse", "--git-dir"])
-    return pathlib.Path(result.strip("\n"))
+    result = git_run_command("rev-parse", "--git-dir")
+    return pathlib.Path(result)
 
 
 def root_dir() -> pathlib.Path:
     """Returns absolute path to top-level 'root' directory, containing '.git/'."""
-    result = git_run_command(["rev-parse", "--show-toplevel"])
-    return pathlib.Path(result.strip("\n"))
+    result = git_run_command("rev-parse", "--show-toplevel")
+    return pathlib.Path(result)
 
 
 def cwd_relative_to_root() -> pathlib.Path:
@@ -68,8 +72,8 @@ def root_relative_to_cwd() -> pathlib.Path:
 
 def is_inside_work_tree() -> bool:
     """Returns True if current working directory is inside a git working tree."""
-    result = git_run_command(["rev-parse", "--is-inside-work-tree"])
-    return bool(strtobool(result))
+    result = git_run_command("rev-parse", "--is-inside-work-tree")
+    return bool(strtobool(result.strip("\n")))
 
 
 def current_branch() -> str:
@@ -159,12 +163,23 @@ def checkout_commit(commit: str) -> None:
     _ = git_run_command(["checkout", commit])
 
 
-def checkout_workspace(
-    commit: str, source: Union[str, os.PathLike], dest: Union[str, os.PathLike] = "."
+def checkout_files(
+    source: Union[str, os.PathLike],
+    dest: Union[str, os.PathLike],
+    commit_or_ref: str,
+    git_dir: Union[str, os.PathLike],
 ) -> None:
     """Checks out a workspace from a given commit at a new location."""
-    _ = git_run_command(
-        ["checkout", "--work-tree", str(source), commit, "--", str(dest)]
+    git_run_command(
+        "--git-dir",
+        str(git_dir),
+        "--work-tree",
+        str(dest),
+        "checkout",
+        commit,
+        "--",
+        str(source),
+        capture_output=False,
     )
 
 

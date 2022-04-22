@@ -1,93 +1,53 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import json
 import pathlib
 import os
 from typing import ClassVar, Optional, Union
 
 import toml  # tomllib part of std lib in 3.11
 
+import pyrepcon.base
 import pyrepcon.git_utils
-from pyrepcon.project import Project, ProjectConfig
-from pyrepcon.utils import ConfigBase, switch_dir
+import pyrepcon.project
+from pyrepcon.utils import switch_dir, get_version
+
+with pathlib.Path(__file__).with_name("templates.json").open("r") as file:
+    TEMPLATES = json.load(file)
 
 
-class WorkspaceConfig(ConfigBase):
-    config_dir: ClassVar[str] = ".workspace"
+@dataclass
+class WorkspaceConfig(pyrepcon.base.BaseConfig):
+    filename: ClassVar[str] = ".workspace.json"
 
-    mode: str = "python-poetry"
+    template: str = "python"
 
 
-class Workspace:
-    def __init__(self, root: Union[str, os.PathLike]):
-        self._root = pathlib.Path(str(root)).resolve()
-        self._config = WorkspaceConfig.load(self._root)
-        with switch_dir(self._root):
-            self._project_root = pyrepcon.git_utils.root_dir()
-
-    @staticmethod
-    def ref_to_path(
-        workspace_ref: str, project_path: Optional[Union[str, os.PathLike]] = None
-    ) -> pathlib.Path:
-        if project_path is None:
-            project_path = pyrepcon.git_utils.root_dir()
-        else:
-            project_path = pathlib.Path(project_path)
-        project_config = ProjectConfig.load(project_path)
-        rel_path_to_workspace = getattr(project_config.workspaces, workspace_ref)
-        abs_path_to_workspace = (
-            project_path / project_config.development_dir / rel_path_to_workspace
-        )
-        return abs_path_to_workspace
+class Workspace(pyrepcon.base.Base):
+    config = WorkspaceConfig
 
     @classmethod
-    def from_reference(
-        cls, workspace_ref: str, project_path: Optional[Union[str, os.PathLike]] = None
-    ) -> Workspace:
-        workspace_path = cls.ref_to_path(workspace_ref, project_path)
-        return cls(workspace_path)
+    def new(cls, full_path: Union[str, os.PathLike], template: str) -> Workspace:
+        full_path = pathlib.Path(str(full_path)).resolve()
+        assert not full_path.exists(), f"{full_path} already exists!"
+        try:
+            template_url = getattr(TEMPLATES, template)
+        except AttributeError:
+            # TODO try direct url
+            pass
 
     @property
-    def root(self) -> pathlib.Path:
-        return self._root
+    def experiments_dir(self) -> pathlib.Path:
+        # return path to experiments dir
+        # self.project.experiments_dir / self.root.relative_to(self.project.workspaces_dir)
 
-    @property
-    def project_root(self) -> pathlib.Path:
-        return self._project_root
+    def new_experiment(self, name: Optional[str] = None, path: Optional[Union[str, os.PathLike]] = None) -> pyrepcon.experiment.Experiment:
+        pass
 
-    @property
-    def loc_in_project(self) -> pathlib.Path:
-        return self.root.relative_to(self.project_root)
-
-    @property
-    def config(self) -> WorkspaceConfig:
-        return self._config
-
-    def exists(self) -> bool:
-        return self.root.is_dir()
-
-    def create_from_template(self, template):
-        pass  # TODO
-
-    def get_version(self, git_ref: Optional[str] = None) -> str:
+    def get_version(self) -> str:
         """Returns version string associated with workspace."""
-        with pyrepcon.git_utils.checkout(git_ref):
-
-            if self.config.mode == "python-poetry":
-                with (self.root / "pyproject.toml").open("r") as file:
-                    conf = toml.load(file)
-                return conf["tool"]["poetry"]["version"]
-            elif self.config.mode == "julia":
-                with (self.root / "project.toml").open("r") as file:
-                    conf = toml.load(file)
-                return conf["version"]
-            elif self.config.mode == "R":
-                with (self.root / "DESCRIPTION").open("r") as file:
-                    conf = file.readlines()
-                version_line = [line for line in conf if "Version:" in line]
-                version_line = version_line[0]
-                return version_line.strip().split(":")[1]
-            else:
-                raise NotImplementedError(f"Unknown mode: {self.config.mode}")
+        return get_version(self)
 
     def checkout(self, commit: str, dest: Union[str, os.PathLike] = ".") -> None:
         pyrepcon.git_utils.checkout_workspace(commit, self.root, dest)

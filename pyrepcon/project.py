@@ -2,20 +2,21 @@
 """
 from __future__ import annotations
 
-from functools import wraps
+from dataclasses import dataclass
+from functools import cached_property, wraps
 import pathlib
 import os
 from typing import ClassVar, Union
 
+import pyrepcon.base
 import pyrepcon.git_utils
-from pyrepcon.utils import ConfigBase, switch_dir
+from pyrepcon.utils import switch_dir
+import pyrepcon.workspace
 
 
-PROJECT_CONFIG_DIR = ".project"
-
-
-class ProjectConfig(ConfigBase):
-    config_dir: ClassVar[str] = PROJECT_CONFIG_DIR
+@dataclass
+class ProjectConfig(pyrepcon.base.BaseConfig):
+    filename: ClassVar[str] = ".project.json"
 
     development_branch: str = "dev"
     experiments_branch: str = "exp"
@@ -25,69 +26,56 @@ class ProjectConfig(ConfigBase):
     publication_dir: str = "key_results"
 
 
-def in_root_dir(meth):
-    @wraps(meth)
-    def wrapper(self, *args, **kwargs):
-        with switch_dir(self.root):
-            result = meth(*args, **kwargs)
-        return result
-
-    return wrapper
-
-
-class Project:
+class Project(pyrepcon.base.Base):
     """Class representing version-controlled project."""
+    config = ProjectConfig
 
     def __init__(self, root: Union[str, os.PathLike]):
-        self._root = pathlib.Path(str(root)).resolve()
-        self._config = ProjectConfig.load(self._root)
-        self._workspaces_list = self._root / PROJECT_CONFIG_DIR / "workspaces.txt"
+        super().__init__(root)
+        with switch_dir(root):
+            self._git_dir = pyrepcon.git_utils.git_dir()
 
-    @staticmethod
-    def is_valid(project_root: Union[str, os.PathLike]) -> bool:
-        project_root = pathlib.Path(str(project_root))
-        required_dirs = [
-            project_root,
-            (project_root / ".git"),
-            (project_root / PROJECT_CONFIG_DIR),
-        ]
-        valid = True
-        for d in required_dirs:
-            if not d.exists():
-                print(f"Missing directory: {d}")
-                valid = False
-        if valid:
-            try:
-                _ = ProjectConfig.load(project_root)
-            except FileNotFoundError:
-                print("Unable to load configuration")
-                valid = False
-        return valid
+    @classmethod
+    def validate(cls, root: pathlib.Path) -> None:
+        super().validate(root)
+        with switch_dir(root):
+            assert (
+                pyrepcon.git_utils.root_dir() == root
+            ), "'{root} is not the root of the git repository"
 
     @property
-    def root(self) -> pathlib.Path:
-        return self._root
+    def development_dir(self) -> pathlib.Path:
+        return self.root / self.config.development_dir
 
     @property
-    def config(self) -> ProjectConfig:
-        return self._config
+    def experiments_dir(self) -> pathlib.Path:
+        return self.root / self.config.experiments_dir
 
     @property
-    @in_root_dir
-    def is_dirty(self) -> bool:
-        return pyrepcon.git_utils.is_dirty()
+    def publication_dir(self) -> pathlib.Path:
+        return self.root / self.config.publication_dir
 
-    @property
-    def workspaces(self) -> list[str]:
-        with self._workspaces_list.open("r") as file:
-            lines = file.readlines()
-        return [line.strip("\n") for line in lines]
+    def list_workspaces(self) -> list[str]:
+        workspace_config_dirs = self.development_dir.rglob(
+            pyrepcon.workspace.WorkspaceConfig.filename
+        )
+        return [d.parent for d in workspace_config_dirs]
 
-    def add_workspace(self, path: Union[str, os.PathLike]) -> None:
-        assert path.is_dir(), "{path} is not a directory!"
-        rel_path = pathlib.Path(str(path)).relative_to(self.root)
-        with self._workspaces_list.open("r") as file:
-            file.write(str(rel_path) + "\n")
+    def list_experiments(self, subdir):
+        pass
 
-    def create_from_template(self, template):
-        pass  # TODO
+    def get_workspace(self, workspace_name: str) -> pyrepcon.workspace.Workspace:
+        return pyrepcon.workspace.Workspace(self.development_dir / workspace_name)
+
+    def get_experiment(self, experiment_name: str) -> pyrepcon.experiment.Experiment:
+        return pyrepcon.experiment.Experiment(self.experiment_dir / experiment_name)
+
+    def new_workspace(
+        self, workspace_name: str, template
+    ) -> pyrepcon.workspace.Workspace:
+        return pyrepcon.workspace.Workspace.new(
+            self.development_dir / workspace_name, template
+        )
+
+    def new_experiment(self, workspace_name, commit):
+        return pyrepcon.experiment.Experiment.new(...)
