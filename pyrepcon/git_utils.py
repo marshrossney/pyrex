@@ -70,10 +70,10 @@ def root_relative_to_cwd() -> pathlib.Path:
     return pathlib.Path(result.strip("\n"))
 
 
-def is_inside_work_tree() -> bool:
-    """Returns True if current working directory is inside a git working tree."""
-    result = git_run_command("rev-parse", "--is-inside-work-tree")
-    return bool(strtobool(result.strip("\n")))
+def is_inside_work_tree(path: Union[str, pathlib.Path] = ".") -> bool:
+    """Returns True if provided path directory is inside a git working tree."""
+    result = git_run_command("-C", str(path), "rev-parse", "--is-inside-work-tree")
+    return bool(strtobool(result))
 
 
 def current_branch() -> str:
