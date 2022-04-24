@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict, field
 import json
 import logging
-import pathlib
 import os
-from typing import ClassVar, Optional, Union
+from typing import Optional, Union
 
 from pyrepcon.utils import InvalidExperimentError, InvalidWorkspaceError
 
@@ -56,9 +55,4 @@ class WorkspaceConfig:
             )
         else:
             with open(path, "w") as file:
-                json.dump(asdict(self), file, indent=6)
-
-    def add_named_experiment(self, name: str, command: str, files: list[str] = []):
-        if name in self.named_experiments:
-            raise Exception(f"{name} is already a named experiment.")
-        self.named_experiments[name] = ExperimentConfig(command=command, files=files)
+                json.dump(obj, file, indent=6)

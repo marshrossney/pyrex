@@ -14,16 +14,16 @@ from pyrepcon.utils import InvalidWorkspaceError, InvalidExperimentError, GitErr
 log = logging.getLogger(__name__)
 
 
-CONFIG_FILE = ".repex.json"
-COMMAND_FILE = "COMMAND.txt"
+_CONFIG_FILE = ".pyrex.json"
+_COMMAND_FILE = "COMMAND.txt"
 
 
 class Workspace:
     """Class acting as a container for pyrex operations."""
 
     def __init__(self, root: Union[str, os.PathLike] = "."):
-        self._root = pathlib.Path(root).absolute()
-        self._config = self._root / CONFIG_FILE
+        self._root = pathlib.Path(root).resolve()
+        self._config = self._root / _CONFIG_FILE
         self._validate()
 
     def _validate(self):
@@ -37,19 +37,12 @@ class Workspace:
             raise InvalidWorkspaceError(f"{self._config} not found")
 
     @classmethod
-    def create(
+    def init(
         cls,
         path: Union[str, os.PathLike] = ".",
-        template: Optional[Union[str, os.PathLike]] = None,
     ) -> Workspace:
         path.mkdir(parents=True, exists_ok=False)
-        if template is None:
-            WorkspaceConfig().dump(path / CONFIG_FILE)
-        else:
-            pass
-            # TODO: cookiecutter from template
-            # either name or url to git repo
-            # add to templates if not there already
+        WorkspaceConfig().dump(path / _CONFIG_FILE)
         return cls(path)
 
     @property
@@ -69,7 +62,7 @@ class Workspace:
         except GitError:
             return None
         else:
-            return pathlib.Path(result).absolute()
+            return pathlib.Path(result.strip()).resolve()
 
     @property
     def git_dir(self) -> Union[pathlib.Path, None]:
@@ -81,7 +74,7 @@ class Workspace:
         except GitError:
             return None
         else:
-            return pathlib.Path(result).absolute()
+            return pathlib.Path(result.strip()).resolve()
 
     def load_config(self) -> WorkspaceConfig:
         return WorkspaceConfig.load(self._config)
@@ -103,7 +96,7 @@ class Workspace:
         """Get the version."""
         config = self.load_config()
         if config.version_command is not None:
-            with switch_dir(self._root):
+            with utils.switch_dir(self._root):
                 result = subprocess.run(
                     config.version_command, capture_output=True, text=True, check=True
                 )
@@ -130,7 +123,7 @@ class Workspace:
         if "{name}" in path:
             path = path.replace("{name}", name)
         if "{timestamp}" in path:
-            path = path.replace("{timestamp}", timestamp())
+            path = path.replace("{timestamp}", utils.timestamp())
         return self._root.joinpath(*path.split("/"))
 
     def _parse_command(self, command: str) -> str:
@@ -157,24 +150,24 @@ class Workspace:
                 )
             experiment_config = config.named_experiments[name]
         else:
-            experiment_config = ExperimentConfig(command=command, files=files)
+            experiment_config = ExperimentConfig(command=command, files=files or [])
             # Add to our list of named experiments
             config.named_experiments[name] = experiment_config
             config.dump(self._config)
 
         # If no path set explicitly by user, construct path from default
-        if override_path is not None:
-            experiment_path = pathlib.Path(override_path)
+        if path is not None:
+            path = pathlib.Path(path)
         else:
-            experiment_path = self._parse_experiment_path(name, config.experiments_path)
+            path = self._parse_experiment_path(name, config.experiments_path)
 
         # Create directory for experiment (raises exception if already existing)
-        experiment_path.mkdir(parents=True, exist_ok=False)
+        path.mkdir(parents=True, exist_ok=False)
 
         # Copy files
         for file in experiment_config.files:
             src = (self._root / file).resolve()  # resolves symlinks
-            dest = experiment_path / file
+            dest = path / file
             if not src.exists():
                 raise InvalidExperimentError(
                     f"Failed to copy '{src}' - it does not exist!"
@@ -187,10 +180,10 @@ class Workspace:
 
         # Create file with command
         command = self._parse_command(experiment_config.command)
-        with (experiment_path / COMMAND_FILE).open("w") as file:
+        with (path / _COMMAND_FILE).open("w") as file:
             file.write(command)
 
-        return experiment_path
+        return path
 
 
 def run_experiment(path: Union[str, os.PathLike]) -> None:
@@ -198,10 +191,10 @@ def run_experiment(path: Union[str, os.PathLike]) -> None:
     if not path.exists():
         raise InvalidExperimentError(f"{path} does not exist")
     try:
-        with (path / COMMAND_FILE).open("r") as file:
+        with (path / _COMMAND_FILE).open("r") as file:
             contents = file.read()
     except FileNotFoundError:
-        raise InvalidExperimentError("Didn't find a command file: '{COMMAND_FILE}'")
+        raise InvalidExperimentError("Didn't find a command file: '{_COMMAND_FILE}'")
 
     # TODO: set up logging?
     command = contents.strip().split(" ")
