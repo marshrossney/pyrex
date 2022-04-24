@@ -1,115 +1,208 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from functools import cached_property
-import json
+import logging
 import pathlib
 import os
-from typing import Callable, ClassVar, Union
+import shutil
+import subprocess
+from typing import Optional, Union
 
 from slugify import slugify
 
+from pyrepcon.config import WorkspaceConfig
 import pyrepcon.git_utils
-from pyrepcon.config import WorkspaceConfig, ExperimentConfig
+from pyrepcon.utils import (
+    switch_dir,
+    timestamp,
+    InvalidWorkspaceError,
+    InvalidExperimentError,
+)
+
+log = logging.getLogger(__name__)
 
 
-class InvalidPathError(Exception):
-    pass
+class Workspace:
+    """Class acting as a container for pyrex operations."""
 
+    def __init__(self, root: Union[str, os.PathLike] = ".", config: str = "repex.json"):
+        self._root = pathlib.Path(root).absolute()
+        self._config = self._root / config
+        self._validate()
 
-class Project:
-    """Class acting as a container for pyrepcon project operations."""
+    def _validate(self):
+        if not self._root.exists():
+            raise InvalidWorkspaceError(f"{self._root} does not exist!")
+        if not self._root.is_dir():
+            raise InvalidWorkspaceError(f"{self._root} is not a directory!")
+        try:
+            _ = self.load_config()
+        except FileNotFoundError:
+            raise InvalidWorkspaceError(f"{self._config} not found")
 
-    def __init__(self, path: Union[str, os.PathLike] = "."):
-        path = pathlib.path(str(path)).resolve()
-        assert pyrepcon.git_utils.is_inside_work_tree(
-            path
-        ), f"'{path}' is not inside a git repository"
-
-        self._root = pathlib.Path(
-            pyrepcon.git_utils.git_run_command(
-                "-C", str(path), "rev-parse", "--show-toplevel"
-            )
-        ).absolute()
-        self._git_dir = pathlib.Path(
-            pyrepcon.git_utils.git_run_command(
-                "-C", str(path), "rev-parse", "--git-dir"
-            )
-        )
+    @classmethod
+    def create(cls, path: Union[str, os.PathLike] = ".") -> Workspace:
+        # TODO: call function
+        pass
 
     @property
     def root(self) -> pathlib.Path:
-        """Path to the root directory of the entire project."""
+        """Path to the root directory of the workspace."""
         return self._root
 
     @property
-    def git_dir(self) -> pathlib.Path:
-        """Path to the git directory, usually '.git/'."""
-        return self._git_dir
+    def project_root(self) -> Union[pathlib.Path, None]:
+        """Path to the root directory of the entire project.
 
-    def get_active_workspace(self) -> Union[pathlib.Path, None]:
-        """If inside workspace, returns the root of the workspace."""
-        search_dir = pathlib.Path.cwd()
-        while search_dir.parent.is_relative_to(self.root):
-            if self._path_is_workspace(search_dir):
-                return search_dir
-            search_dir = search_dir.parent
-
-    def get_active_experiment(self) -> Union[pathlib.Path, None]:
-        """If inside experiment, returns the root of the experiment."""
-        search_dir = pathlib.Path.cwd()
-        while search_dir.parent.is_relative_to(self.root):
-            if self._path_is_experiment(search_dir):
-                return search_dir
-            search_dir = search_dir.parent
-
-    def new_workspace(self, path: str, template: str) -> None:
-        path = self.root / path
-        assert (
-            not path.exists()
-        ), f"Unable to create workspace at '{path}' - already exists!"
-        # TODO: utils cookiecutter / template
-
-    def new_experiment(self, template: str) -> None:
-        # TODO cookiecutter
-        suggestions = {}
-
-        workspace_path = self._get_workspace_path(workspace)
-        workspace_version = self._get_workspace_version(workspace_path)
-
-        default_experiment_parent_path = workspace_path / workspace_version
-        default_experiment_name = ...
-    
-    def _check_valid_path(self, path: pathlib.Path) -> bool:
-        """Raises InvalidPathError if path not an existing child of project root."""
-        assert type(path) == pathlib.Path
-        if not path.exists():
-            raise InvalidPathError(f"{path} does not exist!")
-        if not path.absolute().is_relative_to(self.root):
-            raise InvalidPathError(
-                f"{path} is not part of this project (not a child of {self._root})!"
+        This is also the git working tree, and contains the repository."""
+        try:
+            result = pyrepcon.git_utils.git_run_command(
+                "-C", str(self._root), "rev-parse", "--show-toplevel"
             )
-
-    def _path_is_workspace(self, path: pathlib.Path) -> bool:
-        try:
-            self._check_valid_path(path / WorkspaceConfig.filename)
-        except InvalidPathError as e:
-            print(e)
-            return False
+        except pyrepcon.git_utils.GitError:
+            return None
         else:
-            return True
+            return pathlib.Path(result).absolute()
 
-    def _path_is_experiment(self, path: pathlib.Path) -> bool:
+    @property
+    def git_dir(self) -> Union[pathlib.Path, None]:
+        """Path to the git repository, usually called '.git/'."""
         try:
-            self._assert_exists_and_in_project(path / ExperimentConfig.filename)
-        except InvalidPathError:
-            return False
+            result = pyrepcon.git_utils.git_run_command(
+                "-C", str(self._root), "rev-parse", "--git-dir"
+            )
+        except pyrepcon.git_utils.GitError:
+            return None
         else:
-            return True
+            return pathlib.Path(result).absolute()
 
-    def _get_workspace_version(self, workspace_path: pathlib.Path) -> str:
-        commands = WorkspaceConfig.load(workspace_path).get_version
-        version = subprocess.run(
-            commands, capture_output=True, text=True, check=True
-        ).stdout.strip("\n")
-        return slugify(version)
+    @property
+    def uses_git(self) -> bool:
+        """Returns true if workspace is in a git working tree."""
+        return pyrepcon.git_utils.is_inside_work_tree(self._root)
+
+    def load_config(self) -> WorkspaceConfig:
+        return WorkspaceConfig.load(self._config)
+
+    def get_branch(self) -> str:
+        """Attempts to extract the name of the current branch of the repo.
+
+        Returns an empty string if the project is not in a git working tree."""
+        try:
+            result = pyrepcon.git_utils.run_command(
+                "-C", str(self._root), "rev-parse", "--abbrev-ref", "HEAD"
+            )
+        except pyrepcon.git_utils.GitError:
+            return ""
+        else:
+            return result.strip()
+
+    def get_version(self) -> str:
+        """Get the version."""
+        config = self.load_config()
+        if config.version_command is not None:
+            with switch_dir(self._root):
+                result = subprocess.run(
+                    config.version_command, capture_output=True, text=True, check=True
+                )
+            version = result.stdout.strip("\n")
+            return version
+        else:
+            return str(config.version)
+
+    def _get_commit(self) -> str:
+        """Get commit SHA-1 associated with current HEAD"""
+        result = pyrepcon.git_utils.run_command(
+            "-C", str(self._root), "rev-parse", "HEAD"
+        )
+        return result.strip()
+
+    def _parse_experiment_path(
+        self,
+        name: str,
+        path: list[str],
+    ) -> pathlib.Path:
+        if "{branch}" in path:
+            path = path.replace("{branch}", self.get_branch())
+        if "{version}" in path:
+            path = path.replace("{version}", self.get_version())
+        if "{name}" in path:
+            path = path.replace("{name}", name)
+        if "{timestamp}" in path:
+            path = path.replace("{timestamp}", timestamp())
+        return self._root.joinpath(*path.split("/"))
+
+    def _parse_command(self, command: str) -> str:
+        if "{commit}" in command:
+            command = command.replace("{commit}", self._get_commit())
+        return command
+
+    def new_experiment(
+        self,
+        name: str,
+        command: Optional[str] = None,
+        files: Optional[list[str]] = None,
+        override_path: Union[bool, str, os.PathLike] = False,
+    ) -> pathlib.Path:
+        """Creates new experiment, returns path to experiment dir."""
+        config = self.load_config()
+
+        # Check if referring to existing named experiment, or new one
+        if name in config.named_experiments:
+            if command is not None or files is not None:
+                raise InvalidExperimentError(
+                    f"{name} is already a named experiment. 'command' and 'files' should not be given in this case"
+                )
+            experiment_config = config.named_experiments[name]
+        else:
+            config.add_named_experiment(name, command, [str(file) for file in files])
+            experiment_config = config.named_experiments[name]
+            config.dump(self._config)
+
+        # If no path set explicitly by user, construct path from default
+        if override_path is not None:
+            experiment_path = pathlib.Path(override_path)
+        else:
+            experiment_path = self._parse_experiment_path(name, config.experiments_path)
+
+        # Create directory for experiment
+        if experiment_path.exists():
+            raise InvalidExperimentError(
+                f"The requested path '{experiment_path}' already exists!"
+            )
+        experiment_path.mkdir(parents=True, exist_ok=False)
+
+        # Copy files
+        for file in experiment_config.files:
+            src = (self._root / file).resolve()  # resolves symlinks
+            dest = experiment_path / file
+            if not src.exists():
+                raise InvalidExperimentError(
+                    f"Failed to copy '{src}' but it does not exist!"
+                )
+            if src.is_file():
+                shutil.copy(src, dest)
+            elif src.is_dir():
+                log.debug("Symbolic links are ignored by copytree")
+                shutil.copytree(src, dest)
+
+        # Create file with command
+        command = self._parse_command(experiment_config.command)
+        with (experiment_path / "COMMAND.txt").open("w") as file:
+            file.write(command)
+
+        return experiment_path
+
+
+def run_experiment(path: Union[str, os.PathLike]) -> None:
+    path = pathlib.Path(path)
+    if not path.exists():
+        raise InvalidExperimentError(f"{path} does not exist")
+    try:
+        with (path / "COMMAND.txt").open("r") as file:
+            contents = file.read()
+    except FileNotFoundError:
+        raise InvalidExperimentError("Didn't find a COMMAND.txt file")
+
+    # TODO: set up logging?
+    command = contents.strip().split(" ")
+    subprocess.run(command)

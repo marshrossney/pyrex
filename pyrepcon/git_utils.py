@@ -166,7 +166,7 @@ def checkout_commit(commit: str) -> None:
 def checkout_files(
     source: Union[str, os.PathLike],
     dest: Union[str, os.PathLike],
-    commit_or_ref: str,
+    commit: str,
     git_dir: Union[str, os.PathLike],
 ) -> None:
     """Checks out a workspace from a given commit at a new location."""
