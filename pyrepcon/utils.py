@@ -4,6 +4,7 @@ import datetime
 import importlib
 import pathlib
 import os
+import subprocess
 from typing import Union
 
 
@@ -13,6 +14,37 @@ class InvalidWorkspaceError(Exception):
 
 class InvalidExperimentError(Exception):
     pass
+
+
+class GitError(Exception):
+    """Handles errors from calling git commands using subprocess."""
+
+    def __init__(self, error: subprocess.CalledProcessError):
+        if type(error.cmd) is list:
+            error.cmd = " ".join(error.cmd)
+        message = f"""The git command '{error.cmd}' returned non-zero exit status {error.returncode}
+        {error.stderr}
+        """
+        super().__init__(message)
+
+        self.error = error
+
+
+def git_run_command(*args: str, capture_output=True):
+    """Runs 'git *args' through subprocess.run, returning the contents of stdout."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=capture_output,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise GitError(e)
+
+    else:
+        if capture_output:
+            return result.stdout
 
 
 def timestamp():
