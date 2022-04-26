@@ -16,6 +16,10 @@ class InvalidExperimentError(Exception):
     pass
 
 
+def raise_(exc):
+    raise exc
+
+
 class GitError(Exception):
     """Handles errors from calling git commands using subprocess."""
 
@@ -72,3 +76,17 @@ class switch_dir:
 
     def __exit__(self, etype, value, traceback):
         os.chdir(self.old)
+
+
+def parse_files_from_command(command: str) -> list[str]:
+    parts = command.split(" ")
+    files = []
+    for part in parts:
+        try:
+            part_as_path = pathlib.Path(part)
+        except SyntaxError:
+            pass
+        else:
+            if part_as_path.exists():
+                files.append(str(part_as_path))
+    return files

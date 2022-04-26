@@ -15,7 +15,7 @@ flake8 = "^4.0.1"
 pytest = "^7.1.1"
 
 [tool.poetry.scripts]
-repcon-run = 'pyrepcon.scripts.new_experiment:main'
+pyrex = 'pyrepcon.scripts.pyrex:pyrex'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
