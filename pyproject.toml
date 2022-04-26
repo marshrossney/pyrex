@@ -1,13 +1,19 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
 [tool.poetry]
-name = "pyrepcon"
+name = "pyrex"
 version = "0.1.0"
-description = "Simple reproducible containers using Python"
+description = "Simple reproducible experiments using Python"
 authors = ["marshrossney <17361029+marshrossney@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 
 [tool.poetry.dependencies]
 python = "^3.8"
 cookiecutter = "^1.7.3"
+click = "^8.1.2"
+python-slugify = "^6.1.1"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1.0"
@@ -15,10 +21,4 @@ flake8 = "^4.0.1"
 pytest = "^7.1.1"
 
 [tool.poetry.scripts]
-pyrex = 'pyrepcon.scripts.pyrex:pyrex'
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-
+pyrex = 'pyrex.scripts.pyrex:pyrex'
