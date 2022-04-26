@@ -5,7 +5,7 @@ import click
 
 from pyrepcon.scripts.experiment import experiment
 from pyrepcon.scripts.workspace import workspace
-from pyrepcon.scripts.template import template
+from pyrepcon.scripts.templates import templates
 
 
 @click.group()
@@ -15,7 +15,7 @@ def pyrex():
 
 pyrex.add_command(experiment)
 pyrex.add_command(workspace)
-pyrex.add_command(template)
+pyrex.add_command(templates)
 
 
 if __name__ == "__main__":

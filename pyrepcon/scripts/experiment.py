@@ -5,10 +5,10 @@ import shlex
 
 import click
 
-import pyrepcon.api as api
-import pyrepcon.config as config
+import pyrepcon.workspace
 import pyrepcon.utils as utils
-from pyrepcon.utils import InvalidExperimentError
+import pyrepcon.experiment
+from pyrepcon.experiment import InvalidExperimentError
 
 
 @click.command()
@@ -61,7 +61,7 @@ from pyrepcon.utils import InvalidExperimentError
 )
 def experiment(name, workspace, output, run, prompt, command):
     """Help about command"""
-    workspace = api.Workspace.search_parents(workspace)
+    workspace = pyrepcon.workspace.Workspace.search_parents(workspace)
     workspace_config = workspace.load_config()
 
     # Neither name nor command were provided
@@ -108,7 +108,7 @@ def experiment(name, workspace, output, run, prompt, command):
         )
 
         # Create an ExperimentConfig just to use the post-init checks
-        _ = config.ExperimentConfig(command, working_dir)
+        _ = pyrepcon.experiment.ExperimentConfig(command, working_dir)
 
         if prompt:
 
@@ -129,13 +129,13 @@ def experiment(name, workspace, output, run, prompt, command):
                     click.echo("File/directory does not exist!")
                     continue
                 try:
-                    _ = config.ExperimentConfig(command, working_dir + [new_file])
+                    _ = pyrepcon.experiment.ExperimentConfig(command, working_dir + [new_file])
                 except InvalidExperimentError as e:
                     click.echo(e)
                     continue
                 working_dir.append(new_file)
 
-        experiment_config = config.ExperimentConfig(command, working_dir)
+        experiment_config = pyrepcon.experiment.ExperimentConfig(command, working_dir)
 
     if command and prompt and not name:
 
@@ -183,7 +183,7 @@ def experiment(name, workspace, output, run, prompt, command):
         run = click.confirm("Run experiment?", default="yes", show_default=True)
 
     if run:
-        api.run_experiment(experiment_path)
+        pyrepcon.experiment.run_experiment(experiment_path)
 
 
 if __name__ == "__main__":

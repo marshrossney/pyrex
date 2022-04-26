@@ -1,22 +1,80 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, asdict, field
+import json
 import logging
 import pathlib
 import os
-import shlex
 import shutil
 import subprocess
 from typing import Optional, Union
 
-from pyrepcon.config import WorkspaceConfig, ExperimentConfig
+from pyrepcon.experiment import COMMAND_FILE, ExperimentConfig, InvalidExperimentError
 import pyrepcon.utils as utils
-from pyrepcon.utils import InvalidWorkspaceError, InvalidExperimentError, GitError
+from pyrepcon.utils import GitError
 
 log = logging.getLogger(__name__)
 
 
 _CONFIG_FILE = ".pyrex.json"
-_COMMAND_FILE = "COMMAND.txt"
+
+
+class InvalidWorkspaceError(Exception):
+    pass
+
+
+@dataclass
+class WorkspaceConfig:
+    version: str = field(default_factory=str)
+    version_command: Optional[str] = None
+    named_experiments_path: str = field(default_factory=str)
+    unnamed_experiments_path: str = field(default_factory=str)
+    named_experiments: dict[ExperimentConfig] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if "" in self.named_experiments.keys():
+            raise InvalidExperimentError(
+                "Empty string cannot be used to name an experiment"
+            )
+        self.named_experiments = {
+            name: ExperimentConfig(**vals)
+            for name, vals in self.named_experiments.items()
+        }
+
+    @classmethod
+    def load(cls, path: Union[str, os.PathLike]):
+        """Load config from existing workspace."""
+        with open(path, "r") as file:
+            config = json.load(file)
+        return cls(**config)
+
+    def dump(self, path: Union[str, os.PathLike]):
+        """Dump config to json file."""
+        log.info("Saving workspace config to file: {path}")
+        obj = asdict(self)
+        # Check object is json serializable so we don't overwrite
+        # existing config file unless it actually works
+        try:
+            _ = json.dumps(obj)
+        except (TypeError, OverflowError):
+            log.error("config: %s" % obj)
+            raise InvalidWorkspaceError(
+                "Config file is not JSON serializable. Abandoning!"
+            )
+        else:
+            with open(path, "w") as file:
+                json.dump(obj, file, indent=6)
+
+    def add_named_experiment(self, name: str, experiment_config) -> None:
+        # NOTE: should slugify this
+        name = str(name)  # really don't want non-string keys
+        if name == "":
+            raise InvalidExperimentError("Cannot name experiment with an empty string")
+        if name in self.named_experiments:
+            raise InvalidExperimentError(
+                f"An experiment with name '{name}' already exists! Please pick a different name."
+            )
+        self.named_experiments[name] = experiment_config
 
 
 class Workspace:
@@ -43,7 +101,7 @@ class Workspace:
         path: Union[str, os.PathLike] = ".",
     ) -> Workspace:
         path = pathlib.Path(path)
-        path.mkdir(parents=True, exists_ok=False)
+        path.mkdir(parents=True, exist_ok=True)
         WorkspaceConfig().dump(path / _CONFIG_FILE)
         return cls(path)
 
@@ -96,6 +154,10 @@ class Workspace:
             return None
         else:
             return pathlib.Path(result.strip()).resolve()
+
+    @property
+    def version(self) -> str:
+        return self._get_version()
 
     def _get_branch(self) -> str:
         """Attempts to extract the name of the current branch of the repo.
@@ -180,17 +242,11 @@ class Workspace:
 
         # Create file with command
         command = self.parse_command(experiment_config.command)
-        with (path / _COMMAND_FILE).open("w") as file:
+        with (path / COMMAND_FILE).open("w") as file:
             file.write(command)
 
         # Create .gitignore which excludes everything except these files
-        gitignore = f"""
-        *
-        !README.*
-        !{_COMMAND_FILE}
-        """
-        for file in experiment_config.working_dir:
-            gitignore += f"\n!{pathlib.Path(file).name}"
+        gitignore = experiment_config.gitignore()
         with (path / ".gitignore").open("w") as file:
             file.write(gitignore)
 
@@ -216,18 +272,3 @@ class Workspace:
         self.experiment(experiment_config, path)
 
         return path
-
-
-def run_experiment(path: Union[str, os.PathLike]) -> None:
-    path = pathlib.Path(path)
-    if not path.exists():
-        raise InvalidExperimentError(f"{path} does not exist")
-    try:
-        with (path / _COMMAND_FILE).open("r") as file:
-            contents = file.read()
-    except FileNotFoundError:
-        raise InvalidExperimentError("Didn't find a command file: '{_COMMAND_FILE}'")
-
-    # TODO: set up logging?
-    command = shlex.split(contents.strip())
-    subprocess.run(command)

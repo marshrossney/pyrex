@@ -4,20 +4,9 @@ import datetime
 import importlib
 import pathlib
 import os
+import shutil
 import subprocess
 from typing import Union
-
-
-class InvalidWorkspaceError(Exception):
-    pass
-
-
-class InvalidExperimentError(Exception):
-    pass
-
-
-def raise_(exc):
-    raise exc
 
 
 class GitError(Exception):
@@ -51,6 +40,15 @@ def git_run_command(*args: str, capture_output=True):
             return result.stdout
 
 
+def is_valid_remote(url: str) -> bool:
+    try:
+        _ = git_run_command("ls-remote", url)
+    except GitError:
+        return False
+    else:
+        return True
+
+
 def timestamp():
     return datetime.datetime.now().strftime("%G%m%dT%H%M%S")  # ISO 8601 basic
 
@@ -78,6 +76,20 @@ class switch_dir:
         os.chdir(self.old)
 
 
+class temp_dir:
+    def __init__(self):
+        self.tmp = pathlib.Path.cwd().joinpath(".tmp")
+        self.tmp.mkdir(exist_ok=False)
+
+    def __enter__(self):
+        self.old = pathlib.Path.cwd()
+        os.chdir(self.tmp)
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        os.chdir(self.old)
+        shutil.rmtree(self.tmp)
+
+
 def parse_files_from_command(command: str) -> list[str]:
     parts = command.split(" ")
     files = []
@@ -90,3 +102,7 @@ def parse_files_from_command(command: str) -> list[str]:
             if part_as_path.exists():
                 files.append(str(part_as_path))
     return files
+
+
+def raise_(exc):
+    raise exc
