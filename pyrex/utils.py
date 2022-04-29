@@ -8,19 +8,36 @@ import shutil
 import subprocess
 from typing import Union
 
+import click
 
-class GitError(Exception):
-    """Handles errors from calling git commands using subprocess."""
+from pyrex.exceptions import GitError
 
-    def __init__(self, error: subprocess.CalledProcessError):
-        if type(error.cmd) is list:
-            error.cmd = " ".join(error.cmd)
-        message = f"""The git command '{error.cmd}' returned non-zero exit status {error.returncode}
-        {error.stderr}
-        """
-        super().__init__(message)
 
-        self.error = error
+def prompt_for_name(
+        init_name: Optional[str] = None, existing_names: list[str] = [], illegal_names: list[str] = [], attempts: int = 5
+):
+    for attempt in range(attempts):
+        if attempt == 0 and init_name is not None:
+            name = init_name
+        else:
+            name = click.prompt("Name", type=click.STRING)
+
+        slug = name.replace(" ", "-")
+        if name != slug:
+            click.echo(f"Simplifying: '{name}' --> '{slug}'")
+            name = slug
+
+        if not name:
+            click.echo("Cannot use empty string as name")
+        elif name in illegal_names:
+            click.echo(f"Cannot use name '{name}'")
+        elif name in existing_names:
+            click.echo(f"'{name}' already exists!")
+        else:
+            return name
+
+    raise click.Abort(f"Giving up after {attempts} attempts")
+
 
 
 def git_run_command(*args: str, capture_output=True):
@@ -99,7 +116,8 @@ def parse_files_from_command(command: str) -> list[str]:
         except SyntaxError:
             pass
         else:
-            if part_as_path.exists():
+            if part_as_path.resolve().is_file():
+                # Resolve symlinks
                 files.append(str(part_as_path))
     return files
 

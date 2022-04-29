@@ -1,29 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field
-import json
-import logging
+import os
 import pathlib
 from typing import Optional, Union
 
+from sys import version_info
+
 from cookiecutter.main import cookiecutter
 
-import pyrepcon.utils as utils
+from pyrex.containers import JSONConfigFile
+from pyrex.utils import temp_dir
 
-# from cookiecutter.exceptions import CookiecutterException
-
-log = logging.getLogger(__name__)
-
-
-_TEMPLATES_FILE = pathlib.Path(__file__).with_suffix(".json")
-
-
-class InvalidTemplateError(Exception):
-    pass
+WORKSPACE_TEMPLATES_FILE = pathlib.Path(__file__).with_name("templates.json")
 
 
 @dataclass
-class Template:
+class WorkspaceTemplate:
     template: str
     checkout: Optional[str] = None
     directory: Optional[str] = None
@@ -34,7 +27,12 @@ class Template:
         if template_as_path.exists():
             self.template = str(template_as_path.resolve())
 
-    def build(self, **cookiecutter_kwargs) -> None:
+        python_version = (
+            f"py{version_info.major}{version_info.minor}{version_info.micro}"
+        )
+        self.extra_context.update({"__python_version": python_version})
+
+    def create_workspace(self, **cookiecutter_kwargs) -> None:
         if "extra_context" in cookiecutter_kwargs:
             self.extra_context.update(cookiecutter_kwargs.pop("extra_context"))
 
@@ -47,58 +45,23 @@ class Template:
         )
 
     def validate(self) -> None:
-        with utils.temp_dir():
-            self.build(no_input=True, overwrite_if_exists=True)
+        with temp_dir():
+            self.create_workspace(no_input=True, overwrite_if_exists=True)
 
 
-class Templates:
-    """Container for the templates file."""
+class WorkspaceTemplatesFile(JSONConfigFile):
+    """Class acting as a container for a PyREx workspace templates file."""
 
-    def __init__(self):
-        with open(_TEMPLATES_FILE, "r") as file:
-            self._templates = json.load(file)
+    str_header = "Available templates:"
 
-    def __str__(self):
-        return json.dumps(self._templates, indent=6)
+    def __init__(
+        self, filepath: Union[str, os.PathLike] = WORKSPACE_TEMPLATES_FILE
+    ) -> None:
+        super().__init__(filepath)
 
-    def _save(self) -> None:
-        try:
-            _ = json.dumps(self._templates)
-        except (TypeError, OverflowError):
-            raise InvalidTemplateError(
-                "Object not JSON serializable. Abandoning the save!"
-            )
-        else:
-            with open(_TEMPLATES_FILE, "w") as file:
-                json.dump(self._templates, file, indent=6)
+    def __getitem__(self, key: str) -> WorkspaceTemplate:
+        return WorkspaceTemplate(**super().__getitem__(key))
 
-    @property
-    def names(self) -> list[str]:
-        """Returns list of existing template names."""
-        return list(self._templates.keys())
-
-    @property
-    def dict(self) -> dict[str, Union[str, dict[str, str]]]:
-        """Returns templates dict."""
-        return self._templates.copy()
-
-    def exists(self, name: str) -> bool:
-        """Return True if there is an existing template with 'name'."""
-        return name in self._templates
-
-    def load(self, name: str) -> Template:
-        """Load template from file."""
-        return Template(**self._templates[name])
-
-    def remove(self, name: str) -> None:
-        """Remove this template."""
-        del self._templates[name]
-        self._save()
-
-    def add(self, name: str, template: Template):
-        if name in self._templates:
-            existing = self.load(name)
-            log.warning(f"This action overwrites an existing template: {existing}!")
-        template_asdict = {key: val for key, val in asdict(template).items() if val}
-        self._templates[name] = template_asdict
-        self._save()
+    def __setitem__(self, key: str, value: WorkspaceTemplate) -> None:
+        template_stripped = {key: val for key, val in asdict(value).items() if val}
+        super().__setitem__(key, template_stripped)
