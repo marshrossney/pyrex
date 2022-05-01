@@ -175,3 +175,26 @@ def parse_files_from_command(command: str) -> list[str]:
 
 def raise_(exc):
     raise exc
+
+
+def check_for_files(
+    directory: pathlib.Path,
+    expected: list[str],
+    additional: list[str] = [],
+    break_after: int = 10,
+):
+    for path in directory.iterdir():
+        if path.is_dir():
+            expected, additional = check_for_files(
+                path, expected, additional
+            )
+        elif path in expected:
+            expected.remove(path)
+        else:
+            additional.append(path)
+
+        # If huge number of files, e.g. from previously run expt
+        if len(additional) > break_after:
+            break
+
+    return expected, additional

@@ -259,17 +259,6 @@ optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
-name = "pugs"
-version = "0.0.1"
-description = ""
-category = "main"
-optional = false
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-
-[package.extras]
-test = ["pytest (>=3.5.0,<5)"]
-
-[[package]]
 name = "py"
 version = "1.11.0"
 description = "library with cross-python path, ini-parsing, io, code, log facilities"
@@ -416,7 +405,7 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "a5233b57e31f51ed2954d5fa9d81ca320787aead1226078ea1c6881656ce29da"
+content-hash = "5aa261bb8864379199b915ae47724fe58e81cfafb39137c3f74180aeb9b091d8"
 
 [metadata.files]
 arrow = [
@@ -573,9 +562,6 @@ pluggy = [
 poyo = [
     {file = "poyo-0.5.0-py2.py3-none-any.whl", hash = "sha256:3e2ca8e33fdc3c411cd101ca395668395dd5dc7ac775b8e809e3def9f9fe041a"},
     {file = "poyo-0.5.0.tar.gz", hash = "sha256:e26956aa780c45f011ca9886f044590e2d8fd8b61db7b1c1cf4e0869f48ed4dd"},
-]
-pugs = [
-    {file = "pugs-0.0.1-py2.py3-none-any.whl", hash = "sha256:aad70fd791f0ecc2ec8066e6688a05dc37023fc4f166b69e733a0a0bf6301683"},
 ]
 py = [
     {file = "py-1.11.0-py2.py3-none-any.whl", hash = "sha256:607c53218732647dff4acdfcd50cb62615cedf612e72d1724fb1a0cc6405b378"},

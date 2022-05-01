@@ -1,24 +1,21 @@
 from __future__ import annotations
 
-import shlex
-
 import click
 
 from pyrex.exceptions import InvalidWorkspaceError
-from pyrex.experiment import ExperimentConfig
-from pyrex.workspace import Workspace
+from pyrex.workspace import PyrexWorkspace
 from pyrex.templates import WorkspaceTemplate, WorkspaceTemplatesFile
-from pyrex.utils import prompt_for_name, parse_files_from_command
+from pyrex.utils import prompt_for_name
 
 _templates_file = WorkspaceTemplatesFile()
 
 
-@click.group("pyrex_workspace")
-def main():
+@click.group("workspace")
+def workspace():
     pass
 
 
-@main.command()
+@workspace.command()
 @click.argument(
     "name",
     type=click.Choice(_templates_file.keys()),
@@ -29,23 +26,23 @@ def create(name):
     template.create_workspace()
 
 
-@main.command()
+@workspace.command()
 def init():
     """Initialise a PyREx workspace in the current working directory"""
     # TODO interactive
     pass
 
 
-@main.command()
+@workspace.command()
 def info():
     """Display information about the current workspace"""
     try:
-        click.echo(str(Workspace.search_parents()))
+        click.echo(str(PyrexWorkspace.search_parents()))
     except InvalidWorkspaceError as e:
         click.echo(e)
 
 
-@main.group()
+@workspace.group()
 def templates():
     pass
 
@@ -126,5 +123,5 @@ def add_repo(url, checkout, directory, name):
     click.echo(f"Successfully added template: {name}!")
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__workspace__":
+    workspace()
