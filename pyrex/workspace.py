@@ -81,6 +81,7 @@ class PyrexWorkspace:
     @property
     def workspace_root(self) -> pathlib.Path:
         """Absolute path to the root directory of the workspace."""
+        # NOTE: No longer aboslute!
         return self._workspace_root
 
     def get_repo_root(self) -> pathlib.Path:
@@ -130,14 +131,14 @@ class PyrexWorkspace:
 
     def parse_experiment_path(self, template: str) -> pathlib.Path:
         path = template
-        if "{repo}" in path:
-            path = path.replace("{repo}", str(self.get_repo_root()))
-        if "{workspace}" in path:
-            path = path.replace("{workspace}", str(self._workspace_root))
-        if "{reponame}" in path:
-            path = path.replace("{reponame}", self.get_worktree_root().name)
-        if "{workspacename}" in path:
-            path = path.replace("{workspacename}", self._workspace_root.name)
+        if "{repo_root}" in path:
+            path = path.replace("{repo_root}", str(self.get_repo_root()))
+        if "{workspace_root}" in path:
+            path = path.replace("{workspace_root}", str(self._workspace_root))
+        if "{repo_name}" in path:
+            path = path.replace("{repo_name}", self.get_worktree_root().name)
+        if "{workspace_name}" in path:
+            path = path.replace("{workspace_name}", self._workspace_root.name)
         if "{branch}" in path:
             path = path.replace("{branch}", self.get_branch())
         if "{version}" in path:
@@ -157,7 +158,7 @@ class PyrexWorkspace:
         repo_root = self.get_repo_root()
         if not new_path.is_relative_to(repo_root):
             log.warning("New path is outside of the git repository!")
-            return self._workspace_root  # absolute path
+            return self._workspace_root.resolve()  # absolute path
 
         if new_path.is_relative_to(self._workspace_root):
             path = pathlib.Path(".").joinpath(
@@ -170,7 +171,9 @@ class PyrexWorkspace:
                 .joinpath(self._workspace_root.relative_to(repo_root))
             )
 
-        assert new_path.joinpath(path).resolve() == self._workspace_root
+        assert (
+            new_path.joinpath(path).resolve() == self._workspace_root.resolve()
+        ), f"{new_path.joinpath(path).resolve()} != {self._workspace_root.resolve()}"
         return str(path)
 
     def check_files(self, files) -> None:
@@ -258,7 +261,7 @@ class PyrexWorkspace:
         workspace_config = dataclasses.replace(
             self._config,
             workspace_root=self._workspace_path(experiment_path),
-            experiments={"": experiment_config},
+            experiments={experiment_name: experiment_config},
         )
 
         click.echo(str(experiment_config))
@@ -273,7 +276,7 @@ class PyrexWorkspace:
             )
 
         dest.mkdir(exist_ok=True, parents=True)
-
+        
         for file in experiment_config.required_files:
             dest.joinpath(file).parent.mkdir(exist_ok=True, parents=True)
             shutil.copy(src / file, dest / file)
@@ -288,7 +291,7 @@ class PyrexWorkspace:
         return type(self)(dest)
 
     def run_experiment(
-        self, experiment_name: str = "", command_posargs: str = ""
+        self, experiment_name: str, command_posargs: str = ""
     ) -> None:
         # Shouldn't be able to give extra posargs to an existing experiment
         # Only so we can test in the workspace root
