@@ -13,6 +13,7 @@ license = "GPL-3.0-only"
 python = "^3.8"
 cookiecutter = "^1.7.3"
 click = "^8.1.2"
+pugs = "^0.0.1"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1.0"
@@ -20,4 +21,5 @@ flake8 = "^4.0.1"
 pytest = "^7.1.1"
 
 [tool.poetry.scripts]
-pyrex = 'pyrex.scripts.cli:cli'
+pyrex = 'pyrex.scripts.pyrex:main'
+pyrex-workspace = 'pyrex.scripts.workspace:main'

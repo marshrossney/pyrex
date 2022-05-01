@@ -5,7 +5,7 @@ import shlex
 
 import click
 
-from pyrex.exceptions import InvalidExperimentError, InvalidWorkspaceError
+from pyrex.exceptions import InvalidWorkspaceError
 import pyrex.workspace
 import pyrex.utils as utils
 import pyrex.experiment
@@ -13,19 +13,24 @@ import pyrex.experiment
 try:
     _active_workspace = pyrex.workspace.Workspace.search_parents()
 except InvalidWorkspaceError as _exception:
-    _choices = []
-    _show_choices = False
+    pass
+    # _choices = []
+    # _show_choices = False
 else:
     _exception = None
-    _choices = _active_workspace.named_experiments.keys()
-    _show_choices = True
+    pass
+    # _choices = _active_workspace.named_experiments.keys()
+    # _show_choices = True
 
-@click.command("experiment")
-@click.argument(
+
+@click.command("pyrex")
+@click.option(
+    "-e",
+    "--experiment",
     "name",
-    type=click.Choice(_choices),
-    #show_choices=_show_choices,
-    #prompt="Name",
+    prompt="Experiment name",
+    type=click.STRING,
+    help="Experiment name",
 )
 @click.option(
     "-o",
@@ -44,7 +49,7 @@ else:
 )
 @click.option(
     "--run/--no-run",
-    default=False,
+    default=True,
     show_default=True,
     help="After creation, run the experiment as a Python subprocess",
 )
@@ -54,16 +59,26 @@ else:
     show_default=True,
     help="Prompt user for confirmation before creating and running experiment",
 )
-def pyrex_experiment(name, output, run, prompt):
+@click.argument(
+    "args",
+    type=click.STRING,
+    default="",
+)
+def main(name, output, run, prompt, args):
     """Help about command"""
     if _exception is not None:
         raise _exception
 
-    experiment = _active_workspace.create_experiment(name, output)
+    experiment = _active_workspace.create_experiment(
+        name,
+        command_posargs=args,
+        output_path=output,
+        prompt=prompt,
+    )
 
     if run:
-        experiment.run(skip_validation=True)
+        experiment.run()
 
 
 if __name__ == "__main__":
-    pyrex_experiment()
+    main()

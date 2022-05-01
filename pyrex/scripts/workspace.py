@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import shlex
+
 import click
 
+from pyrex.exceptions import InvalidWorkspaceError
+from pyrex.experiment import ExperimentConfig
+from pyrex.workspace import Workspace
 from pyrex.templates import WorkspaceTemplate, WorkspaceTemplatesFile
-from pyrex.utils import prompt_for_name
+from pyrex.utils import prompt_for_name, parse_files_from_command
 
 _templates_file = WorkspaceTemplatesFile()
 
 
-@click.group("templates")
-def pyrex_templates():
+@click.group("pyrex_workspace")
+def main():
     pass
 
 
-@pyrex_templates.command()
+@main.command()
 @click.argument(
     "name",
     type=click.Choice(_templates_file.keys()),
@@ -24,13 +29,34 @@ def create(name):
     template.create_workspace()
 
 
-@pyrex_templates.command()
+@main.command()
+def init():
+    """Initialise a PyREx workspace in the current working directory"""
+    # TODO interactive
+    pass
+
+
+@main.command()
+def info():
+    """Display information about the current workspace"""
+    try:
+        click.echo(str(Workspace.search_parents()))
+    except InvalidWorkspaceError as e:
+        click.echo(e)
+
+
+@main.group()
+def templates():
+    pass
+
+
+@templates.command()
 def list():
     """List saved templates"""
     click.echo(str(_templates_file))
 
 
-@pyrex_templates.command()
+@templates.command()
 @click.argument(
     "name",
     type=click.Choice(_templates_file.keys()),
@@ -41,7 +67,7 @@ def remove(name):
     click.echo(f"Successfully removed template: {name}")
 
 
-@pyrex_templates.command()
+@templates.command()
 @click.argument(
     "path",
     type=click.Path(exists=True, file_okay=False, resolve_path=True),
@@ -62,7 +88,7 @@ def add_path(path, name):
 
 
 # TODO: allow user to specify extra context for template
-@pyrex_templates.command()
+@templates.command()
 @click.argument(
     "url",
     type=click.STRING,
@@ -101,4 +127,4 @@ def add_repo(url, checkout, directory, name):
 
 
 if __name__ == "__main__":
-    templates()
+    main()
