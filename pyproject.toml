@@ -11,8 +11,8 @@ license = "GPL-3.0-only"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-cookiecutter = "^1.7.3"
 click = "^8.1.2"
+cookiecutter = "^1.7.3"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1.0"

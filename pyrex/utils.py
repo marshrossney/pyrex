@@ -185,9 +185,7 @@ def check_for_files(
 ):
     for path in directory.iterdir():
         if path.is_dir():
-            expected, additional = check_for_files(
-                path, expected, additional
-            )
+            expected, additional = check_for_files(path, expected, additional)
         elif path in expected:
             expected.remove(path)
         else:

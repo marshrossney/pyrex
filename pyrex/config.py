@@ -7,7 +7,7 @@ import os
 import pathlib
 from typing import Optional, Union
 
-import yaml
+# import yaml
 
 from pyrex.exceptions import InvalidExperimentError
 
@@ -39,7 +39,7 @@ class JSONConfigFile:
                 json.dump(contents, file, indent=6)
 
 
-@dataclasses.dataclass
+"""@dataclasses.dataclass
 class YAMLConfigFile:
     @classmethod
     def load(cls, filepath: Union[str, os.PathLike]) -> JSONConfigFile:
@@ -56,6 +56,7 @@ class YAMLConfigFile:
         else:
             with open(filepath, "w") as file:
                 yaml.safe_dump(contents, file)
+"""
 
 
 @dataclasses.dataclass
@@ -90,10 +91,29 @@ class ExperimentConfig:
         ] + self.required_files
         return "*\n" + "\n!".join(dont_ignore)
 
-    def readme(self) -> None:
-        return "\n".join(
-            [f"Commit: {self.commit or 'not provided!'}" f"Command: {self.command}"]
-        )
+    def readme(self, workspace_readme: str) -> None:
+        # TODO: improve this pile of shite, maybe using template engine
+        contents = f"""
+==========
+Experiment
+==========
+
+:Author: ...
+:Commit: {self.commit}
+:Comments: ...
+
+-----------------------
+Running this experiment
+-----------------------
+
+1. Clone the repository and navigate to this branch and subdirectory.
+2. See `installation instructions <{workspace_readme}#Installation>`__.
+3. Run the following commands::
+    
+    git checkout {self.commit}
+    {self.command}
+"""
+        return contents
 
     def __str__(self) -> str:
         return json.dumps(dataclasses.asdict(self), indent=4)

@@ -4,12 +4,13 @@ from dataclasses import dataclass, asdict, field
 import json
 import os
 import pathlib
-from typing import Optional, Union
-
+from typing import Any, Optional, Union
 from sys import version_info
 
-import yaml
+# import yaml
+import click
 
+from pyrex.exceptions import InvalidTemplateError
 from pyrex.utils import temp_dir
 
 WORKSPACE_TEMPLATES_FILE = pathlib.Path(__file__).with_name("templates.json")
@@ -28,7 +29,7 @@ class WorkspaceTemplate:
             self.template = str(template_as_path.resolve())
 
         python_version = (
-            f"py{version_info.major}{version_info.minor}{version_info.micro}"
+            f"{version_info.major}.{version_info.minor}.{version_info.micro}"
         )
         self.extra_context.update({"__python_version": python_version})
 

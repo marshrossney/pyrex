@@ -26,24 +26,25 @@ log = logging.getLogger(__name__)
 class PyrexWorkspace:
     """Container"""
 
-    def __init__(self, workdir: Union[str, os.PathLike] = "."):
+    def __init__(self, root: Union[str, os.PathLike] = "."):
         try:
             loaded_config = WorkspaceConfig.load(
-                pathlib.Path(workdir).joinpath(WORKSPACE_CONFIG_FILE)
+                pathlib.Path(root).joinpath(WORKSPACE_CONFIG_FILE)
             )
         except FileNotFoundError as exc:
             raise InvalidWorkspaceError(
-                "'{workdir}' does not contain the file '{WORKSPACE_CONFIG_FILE}'"
+                "'{root}' does not contain the file '{WORKSPACE_CONFIG_FILE}'"
             ) from exc
 
-        self._workdir = pathlib.Path(workdir).resolve()
+        # TODO decide on naming convention
+        self._experiment_root = pathlib.Path(root).resolve()
         self._config = loaded_config
 
         workspace_root = pathlib.Path(self._config.workspace_root)
         if workspace_root.is_absolute():
             self._workspace_root = workspace_root
         else:
-            self._workspace_root = self._workdir.joinpath(workspace_root)
+            self._workspace_root = self._experiment_root.joinpath(workspace_root)
 
         if self.get_repo_root() is None:
             log.warning(
@@ -69,20 +70,24 @@ class PyrexWorkspace:
         )
 
     @property
-    def workdir(self) -> pathlib.Path:
-        """Absolute path to the working directory"""
-        return self._workdir
-
-    @property
     def config(self) -> WorkspaceConfig:
         """Loaded workspace config file"""
         return self._config
+
+    @property
+    def experiment_root(self) -> pathlib.Path:
+        """Absolute path to the working directory"""
+        return self._experiment_root
 
     @property
     def workspace_root(self) -> pathlib.Path:
         """Absolute path to the root directory of the workspace."""
         # NOTE: No longer aboslute!
         return self._workspace_root
+
+    @property
+    def is_root(self) -> bool:
+        return self._experiment_root.resolve() == self._workspace_root.resolve()
 
     def get_repo_root(self) -> pathlib.Path:
         """Absolute path to the root of the git working tree."""
@@ -129,7 +134,7 @@ class PyrexWorkspace:
         version = result.stdout.strip("\n")
         return version
 
-    def parse_experiment_path(self, template: str) -> pathlib.Path:
+    def _parse_experiment_path(self, template: str) -> pathlib.Path:
         path = template
         if "{repo_root}" in path:
             path = path.replace("{repo_root}", str(self.get_repo_root()))
@@ -176,7 +181,7 @@ class PyrexWorkspace:
         ), f"{new_path.joinpath(path).resolve()} != {self._workspace_root.resolve()}"
         return str(path)
 
-    def check_files(self, files) -> None:
+    def _check_files(self, files) -> None:
         """Returns True if the working directory is as specified in config.
 
         If config file specifies that an entire directory should be present,
@@ -223,7 +228,7 @@ class PyrexWorkspace:
         if experiment_path:
             experiment_path = pathlib.Path(experiment_path).resolve()
         else:
-            experiment_path = self.parse_experiment_path(experiment_config.output_path)
+            experiment_path = self._parse_experiment_path(experiment_config.output_path)
         if experiment_path.exists():
             if not experiment_path.is_dir():
                 raise NotADirectoryError(
@@ -234,14 +239,18 @@ class PyrexWorkspace:
                     f"Experiment path '{experiment_path}' exists as is non-empty!"
                 )
 
-        src = self._workdir  # NOTE: not workspace root - allows experiment clone
+        src = (
+            self._experiment_root
+        )  # NOTE: not workspace root - allows experiment clone
         dest = experiment_path
 
         command = shlex.join(
             shlex.split(experiment_config.command) + shlex.split(command_posargs)
         )
+        # only get files from posargs - don't want version-controlled scripts copied
         required_files = (
-            experiment_config.required_files + utils.parse_files_from_command(command)
+            experiment_config.required_files
+            + utils.parse_files_from_command(command_posargs)
         )
 
         for file in required_files:
@@ -258,9 +267,11 @@ class PyrexWorkspace:
             commit=self.get_commit(),
         )
 
+        rel_path_to_workspace_root = self._workspace_path(experiment_path)
+
         workspace_config = dataclasses.replace(
             self._config,
-            workspace_root=self._workspace_path(experiment_path),
+            workspace_root=rel_path_to_workspace_root,
             experiments={experiment_name: experiment_config},
         )
 
@@ -276,7 +287,7 @@ class PyrexWorkspace:
             )
 
         dest.mkdir(exist_ok=True, parents=True)
-        
+
         for file in experiment_config.required_files:
             dest.joinpath(file).parent.mkdir(exist_ok=True, parents=True)
             shutil.copy(src / file, dest / file)
@@ -286,12 +297,16 @@ class PyrexWorkspace:
         with dest.joinpath(".gitignore").open("w") as file:
             file.write(experiment_config.gitignore())
         with dest.joinpath("README.rst").open("w") as file:
-            file.write(experiment_config.readme())
+            file.write(
+                experiment_config.readme(
+                    os.path.join(rel_path_to_workspace_root, "README.rst")
+                )
+            )
 
         return type(self)(dest)
 
     def run_experiment(
-        self, experiment_name: str, command_posargs: str = ""
+        self, experiment_name: str, command_posargs: str = "", prompt: bool = True
     ) -> None:
         # Shouldn't be able to give extra posargs to an existing experiment
         # Only so we can test in the workspace root
@@ -308,5 +323,15 @@ class PyrexWorkspace:
 
         command = shlex.split(experiment_config.command) + shlex.split(command_posargs)
 
-        with utils.switch_dir(self._workdir):
+        click.echo(str(experiment_config))
+        if prompt:
+            click.confirm(
+                "Proceed to run experiment",
+                prompt_suffix="?",
+                default="yes",
+                show_default=True,
+                abort=True,
+            )
+
+        with utils.switch_dir(self._experiment_root):
             subprocess.run(command)
