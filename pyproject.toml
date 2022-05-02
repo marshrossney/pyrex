@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "pyrepcon"
+name = "pyrex"
 version = "0.1.0"
-description = "Simple reproducible containers using Python"
+description = "Simple tool for reproducible experiments using Python"
 authors = ["marshrossney <17361029+marshrossney@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 
