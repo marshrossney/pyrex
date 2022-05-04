@@ -1,0 +1,8 @@
+# Cookiecutter templates
+#
+python:
+    template: https://github.com/marshrossney/pyrex-templates.git
+    checkout: python-poetry
+
+local:
+    template: /home/joe/reproducibility_code/pyrex-templates

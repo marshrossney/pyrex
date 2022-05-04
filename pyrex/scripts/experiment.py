@@ -1,81 +1,44 @@
 from __future__ import annotations
 
+import dataclasses
+import logging
 import pathlib
 import shlex
+import shutil
+import subprocess
 
 import click
+from cookiecutter.main import cookiecutter
 
-from pyrex.exceptions import InvalidWorkspaceError
-from pyrex.workspace import PyrexWorkspace
-import pyrex.utils as utils
+from pyrex.config import InputConfig, OutputConfig, ExperimentsCollection
+import pyrex.data
+from pyrex.exceptions import InvalidConfigError, InvalidPathError
+import pyrex.utils
 
-
-try:
-    _active_workspace = PyrexWorkspace.search_parents()
-except InvalidWorkspaceError:
-    _in_workspace = True
-    _experiments = []
-    _default_experiment = None
-else:
-    _in_workspace = False
-    _experiments = list(_active_workspace.config.experiments.keys())
-    if len(_experiments) == 1:
-        _default_experiment = _experiments[0]
-    else:
-        _default_experiment = None
-
-
-def _show_help_and_abort(ctx, param, abort_flag):
-    if abort_flag:
-        click.echo(ctx.get_help())
-        ctx.exit()
-
-
-def _abort_if_outside_workspace(func):
-    func = click.option(
-        "--abort",
-        is_flag=True,
-        default=_in_workspace,
-        is_eager=True,
-        hidden=True,
-        callback=_show_help_and_abort,
-        expose_value=False,
-    )(func)
-    return func
+log = logging.getLogger(__name__)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
-@_abort_if_outside_workspace
 @click.option(
     "-o",
     "--output",
-    type=click.Path(path_type=pathlib.Path, resolve_path=True),
+    "output_path",
+    type=click.Path(path_type=str, resolve_path=True),
     help="Create the experiment here, overriding the default location",
-    callback=lambda ctx, param, output: None
-    if not output
-    else (
-        output
-        if not output.exists()
-        else utils.raise_(
-            FileExistsError(f"Output directory '{output}' already exists!")
-        )
-    ),
 )
 @click.option(
-    "--run/--no-run",
-    default=False,
-    show_default=True,
-    help="After creation, run the experiment as a Python subprocess",
+    "--run",
+    is_flag=True,
+    help="After creation, immediately run the commands using Python's subprocess.run utility",
 )
 @click.option(
-    "--prompt/--no-prompt",
-    default=True,
-    show_default=True,
-    help="Prompt user for confirmation before creating and running experiment",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation prompts",
 )
 @click.argument(
-    "name",
-    type=click.Choice(_experiments),
+    "experiment_name",
+    type=click.STRING,
 )
 @click.argument(
     "arguments",
@@ -83,45 +46,117 @@ def _abort_if_outside_workspace(func):
     nargs=-1,
     callback=lambda ctx, param, args: shlex.join(args),
 )
-def create(name, output, run, prompt, arguments):
+def create(output_path, run, yes, experiment_name, arguments):
     """Help about command"""
 
-    experiment = _active_workspace.create_experiment(
-        experiment_name=name,
-        command_posargs=arguments,
-        experiment_path=output,
-        prompt=prompt,
+    workspace = InputConfig.search_parents()
+    workspace_root = pathlib.Path(workspace.root).resolve()
+
+    repository = pyrex.data.Repository.detect(workspace_root)
+    author = pyrex.data.Author.detect(workspace_root)
+
+    experiments_collection = ExperimentsCollection.load(
+        workspace_root.joinpath(workspace.experiments_file)
     )
+    experiment = experiments_collection[experiment_name]
+
+    extra_files = pyrex.utils.parse_files_from_command(arguments, where=workspace_root)
+    experiment.files + extra_files
+
+    for file in experiment.files:
+        filepath = workspace_root.joinpath(file)
+        if not filepath.exists():
+            raise InvalidConfigError(
+                "File '{file}' not found in workspace"
+            ) from FileNotFoundError
+        if not filepath.resolve().is_file():
+            raise InvalidConfigError("Only files can be copied") from IsADirectoryError
+
+    output_path = (
+        output_path or experiment.output_path or workspace.experiments_output_path
+    )
+    # NOTE: actually compiling an f-string probably a bad idea, hence use of replace
+    output_path = pathlib.Path(
+        output_path.replace("{workspace_root}", workspace.root)
+        .replace("{workspace_name}", workspace.name)
+        .replace("{version}", workspace.version)
+        .replace("{repo_root}", repository.root)
+        .replace("{repo_name}", repository.name)
+        .replace("{branch}", repository.branch)
+        .replace("{experiment_name}", experiment_name)
+    )
+    if not output_path.is_absolute():
+        raise InvalidPathError(f"Output path '{output_path}' is not absolute")
+
+    if not output_path.is_relative_to(repository.root):
+        log.warning(
+            "Output path '%s' is not in the same git repository as the workspace '%s'"
+            % (output_path, workspace.root)
+        )
+    path = pyrex.data.Path.compute(
+        output_path.joinpath("dummy"), workspace.root, repository.root
+    )
+
+    experiment.commands = [
+        command.replace("{workspace}", path.to_workspace_root).replace(
+            "{posargs}", arguments
+        )
+        for command in experiment.commands
+    ]
+
+    output = OutputConfig(
+        author=author,
+        path=path,
+        repository=repository,
+        experiment=experiment,
+        workspace=workspace,
+    )
+
+    click.echo(output)
+    click.echo(output_path)
+    if not yes:
+        click.confirm(
+            "Confirm",
+            prompt_suffix="?",
+            default="yes",
+            show_default=True,
+            abort=True,
+        )
+
+    extra_context = {f"_{key}": val for key, val in dataclasses.asdict(output).items()}
+    experiment_root = cookiecutter(
+        template=experiment.template.template,
+        checkout=experiment.template.checkout,
+        directory=experiment.template.directory,
+        password=experiment.template.password,
+        output_dir=str(output_path),
+        extra_context=extra_context,
+        no_input=True,
+    )
+    experiment_root = pathlib.Path(experiment_root)
+
+    for file in experiment.files:
+        experiment_root.joinpath(file).parent.mkdir(exist_ok=True, parents=True)
+        shutil.copy(workspace_root / file, experiment_root / file)
+
+    output.dump(experiment_root)
+    # TODO dump log as well
+
+    click.echo("Commands to run:")
+    click.echo("\n".join(command for command in experiment.commands))
 
     if run:
-        experiment.run_experiment(name)
-
-
-@click.command(context_settings={"ignore_unknown_options": True})
-@_abort_if_outside_workspace
-@click.option(
-    "--prompt/--no-prompt",
-    default=True,
-    show_default=True,
-    help="Prompt user for confirmation before creating and running experiment",
-)
-@click.argument(
-    "name",
-    type=click.Choice(_experiments),
-    default=_default_experiment,
-)
-@click.argument(
-    "arguments",
-    type=click.STRING,
-    nargs=-1,
-    callback=lambda ctx, param, args: shlex.join(args),
-)
-def run(name, arguments, prompt):
-    _active_workspace.run_experiment(
-        experiment_name=name,
-        command_posargs=arguments,
-        prompt=prompt,
-    )
+        if not yes:
+            click.confirm(
+                "Proceed to run experiment",
+                prompt_suffix="?",
+                default="yes",
+                show_default=True,
+                abort=True,
+            )
+        with pyrex.utils.switch_dir(experiment_root):
+            for command in experiment.commands:
+                subprocess.run(shlex.split(command))
 
 
 if __name__ == "__main__":

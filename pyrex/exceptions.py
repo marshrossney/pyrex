@@ -3,6 +3,10 @@ from __future__ import annotations
 import subprocess
 
 
+class InvalidConfigError(Exception):
+    pass
+
+
 class InvalidWorkspaceError(Exception):
     pass
 
