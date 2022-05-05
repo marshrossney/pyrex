@@ -128,7 +128,6 @@ def create(output_path, run, yes, experiment_name, arguments):
         template=experiment.template.template,
         checkout=experiment.template.checkout,
         directory=experiment.template.directory,
-        password=experiment.template.password,
         output_dir=str(output_path),
         extra_context=extra_context,
         no_input=True,

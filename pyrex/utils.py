@@ -132,7 +132,7 @@ class switch_dir:
 
 class temp_dir:
     def __init__(self):
-        self.tmp = pathlib.Path.cwd().joinpath(".tmp")
+        self.tmp = pathlib.Path.cwd().joinpath(".pyrex_tmp")
         self.tmp.mkdir(exist_ok=False)
 
     def __enter__(self):

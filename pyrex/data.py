@@ -8,8 +8,11 @@ import shlex
 import subprocess
 from typing import Optional, Union
 
-from pyrex.exceptions import GitError
-from pyrex.utils import git_run_command, compute_relative_paths
+import click
+from cookiecutter.main import cookiecutter
+
+from pyrex.exceptions import GitError, CookiecutterException, InvalidTemplateError
+from pyrex.utils import git_run_command, compute_relative_paths, temp_dir
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +93,19 @@ class Template:
     template: str
     checkout: Optional[str] = None
     directory: Optional[str] = None
-    password: Optional[str] = None
+
+    def validate(self) -> None:
+        try:
+            with temp_dir():
+                cookiecutter(
+                    **dataclasses.asdict(self), no_input=True, overwrite_if_exists=True
+                )
+        except CookiecutterException as exc:
+            raise InvalidTemplateError(
+                "Cookiecutter failed to parse this template"
+            ) from exc
+        else:
+            click.echo("Template seems to work")
 
 
 @dataclasses.dataclass

@@ -9,11 +9,19 @@ from typing import Callable, Optional, Union
 
 import yaml
 
-from pyrex import INPUT_CONFIG_FILE, OUTPUT_CONFIG_FILE
 import pyrex.data
 from pyrex.exceptions import InvalidConfigError, InvalidWorkspaceError
 
 log = logging.getLogger(__name__)
+
+INPUT_CONFIG_FILE = ".pyrex_workspace.yaml"
+OUTPUT_CONFIG_FILE = ".pyrex_experiment.yaml"
+WORKSPACE_TEMPLATES_FILE = pathlib.Path(__file__).parent.joinpath(
+    "templates/workspaces.yaml"
+)
+EXPERIMENT_TEMPLATES_FILE = pathlib.Path(__file__).parent.joinpath(
+    "templates/experiments.yaml"
+)
 
 
 @dataclasses.dataclass
@@ -59,7 +67,7 @@ class Config:
 
     def dump(self, filepath: Union[str, os.PathLike]) -> None:
         _, dumper = self._get_loader_and_dumper(filepath)
-        contents = dataclasses.asdict(self)
+        contents = self.asdict()
         try:
             contents_str = dumper(contents)
         except (TypeError, OverflowError) as exc:
@@ -71,6 +79,9 @@ class Config:
                 log.warning("Dumping an empty configuration to %s" % filepath)
             with open(filepath, "w") as file:
                 file.write(contents_str)
+
+    def asdict(self) -> dict:
+        return dataclasses.asdict(self)
 
 
 @dataclasses.dataclass
@@ -136,11 +147,13 @@ class OutputConfig(Config):
 
 class HomogeneousConfigCollection(Config):
     config_class: Config = Config
+    illegal_keys: list = []
 
     def __init__(self, config_file: str, **elements: dict[str, dict]) -> None:
-        self._elements = {
-            key: self.config_class(**contents) for key, contents in elements.items()
-        }
+        self._elements = elements
+
+    def __str__(self) -> str:
+        return yaml.safe_dump(self._elements, indent=4)
 
     def __len__(self) -> int:
         return len(self._elements)
@@ -149,23 +162,26 @@ class HomogeneousConfigCollection(Config):
         return key in self._elements
 
     def __getitem__(self, key: str) -> Config:
-        return self._elements[key]
+        return self.config_class(**self._elements[key])
 
-    def __setitem__(self, key, value) -> None:
-        try:
-            slug = key.replace(" ", "-")  # really don't want crappy keys
-        except TypeError:
-            raise TypeError(f"Unable to convert type '{type(key)}' to string slug")
-        else:
-            if slug != key:
-                log.info("Simplified %s --> %s" % (key, slug))
-                key = slug
+    def __setitem__(self, key: str, value: Config) -> None:
+        if type(key) is not str:
+            raise TypeError("Key should be a string")
+        if type(value) is not self.config_class:
+            raise TypeError(f"Value should be an intance of '{self.config_class}'")
+
+        slug = key.replace(" ", "-")  # really don't want crappy keys
+        if slug != key:
+            log.info("Simplified %s --> %s" % (key, slug))
+            key = slug
+
         if key in self.illegal_keys:
             raise KeyError(f"Illegal key: '{key}'")
         if key in self:
             raise KeyError(f"An element with key '{key}' already exists!")
+
+        value = dataclasses.asdict(value)
         self._elements.update({key: value})
-        self._update()
 
     def __delitem__(self, key) -> None:
         del self._elements[key]
@@ -173,9 +189,30 @@ class HomogeneousConfigCollection(Config):
     def keys(self) -> list:
         return list(self._elements.keys())
 
+    def asdict(self) -> dict:
+        return self._elements.copy()
 
-class TemplatesCollection(HomogeneousConfigCollection):
+
+class WorkspaceTemplatesCollection(HomogeneousConfigCollection):
     config_class = pyrex.data.Template
+
+    @classmethod
+    def load(cls) -> WorkspaceTemplatesCollection:
+        return super().load(WORKSPACE_TEMPLATES_FILE)
+
+    def dump(self) -> None:
+        super().dump(WORKSPACE_TEMPLATES_FILE)
+
+
+class ExperimentTemplatesCollection(HomogeneousConfigCollection):
+    config_class = pyrex.data.Template
+
+    @classmethod
+    def load(cls) -> TemplatesCollection:
+        return super().load(EXPERIMENT_TEMPLATES_FILE)
+
+    def dump(self) -> None:
+        super().dump(EXPERIMENT_TEMPLATES_FILE)
 
 
 class ExperimentsCollection(HomogeneousConfigCollection):

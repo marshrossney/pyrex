@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 
+from cookiecutter.exceptions import CookiecutterException
+
 
 class InvalidConfigError(Exception):
     pass
