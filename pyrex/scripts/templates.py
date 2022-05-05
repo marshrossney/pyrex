@@ -111,3 +111,6 @@ def add_repo(url, checkout, directory, name):
     ctx.obj["TEMPLATES"][name] = template
     ctx.obj["TEMPLATES"].dump()
     click.echo(f"Successfully added template: {name}!")
+
+if __name__ == "__main__":
+    templates()
