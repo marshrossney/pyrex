@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import dataclasses
-
 import click
 
-from pyrex.config import WorkspaceTemplatesCollection, ExperimentTemplatesCollection
-from pyrex.data import Template
+from pyrex.config import (
+    TemplateConfig,
+    WorkspaceTemplateConfigCollection,
+    ExperimentTemplateConfigCollection,
+)
 from pyrex.utils import prompt_for_name
 
 
@@ -19,16 +20,16 @@ from pyrex.utils import prompt_for_name
 )
 @click.pass_context
 def templates(ctx, select: click.STRING):
+    ctx.ensure_object(dict)
     if select is None:
         select = click.prompt(
             "Select workspace (w) or experiment (e) templates",
             type=click.Choice(["w", "e"]),
         )
-    ctx.ensure_object(dict)
     if select == "w":
-        ctx.obj["TEMPLATES"] = WorkspaceTemplatesCollection.load()
+        ctx.obj["TEMPLATES"] = WorkspaceTemplateConfigCollection.load()
     elif select == "e":
-        ctx.obj["TEMPLATES"] = ExperimentTemplatesCollection.load()
+        ctx.obj["TEMPLATES"] = ExperimentTemplateConfigCollection.load()
 
 
 @templates.command()
@@ -65,9 +66,9 @@ def remove(ctx, name: click.STRING):
 @click.pass_context
 def add_path(ctx, path, name):
     """Add a local path to a template"""
-    template = Template(template=path)
+    template = TemplateConfig(template=path)
     template.validate()
-    name = prompt_for_name(init_name=name, existing_names=ctx.obj["TEMPLATES"].keys())
+    name = prompt_for_name(init_name=name, existing_names=ctx.obj["TEMPLATES"].keys)
     ctx.obj["TEMPLATES"][name] = template
     ctx.obj["TEMPLATES"].dump()
     click.echo(f"Successfully added template: {name}!")
@@ -103,14 +104,15 @@ def add_path(ctx, path, name):
     help="Name to associate with template",
 )
 @click.pass_context
-def add_repo(url, checkout, directory, name):
+def add_repo(ctx, url, checkout, directory, name):
     """Add a remote git repository containing a template"""
-    template = Template(template=url, checkout=checkout, directory=directory)
+    template = TemplateConfig(template=url, checkout=checkout, directory=directory)
     template.validate()
     name = prompt_for_name(init_name=name, existing_names=ctx.obj["TEMPLATES"].keys())
     ctx.obj["TEMPLATES"][name] = template
-    ctx.obj["TEMPLATES"].dump()
+    ctx.obj["FILE"].dump()
     click.echo(f"Successfully added template: {name}!")
+
 
 if __name__ == "__main__":
     templates()

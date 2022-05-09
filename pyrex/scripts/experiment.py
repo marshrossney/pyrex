@@ -10,8 +10,7 @@ import subprocess
 import click
 from cookiecutter.main import cookiecutter
 
-from pyrex.config import InputConfig, OutputConfig, ExperimentsCollection
-import pyrex.data
+import pyrex.config
 from pyrex.exceptions import InvalidConfigError, InvalidPathError
 import pyrex.utils
 
@@ -49,25 +48,19 @@ log = logging.getLogger(__name__)
 def create(output_path, run, yes, experiment_name, arguments):
     """Help about command"""
 
-    workspace = InputConfig.search_parents()
-    workspace_root = pathlib.Path(workspace.root).resolve()
+    workspace = pyrex.config.WorkspaceInput.search_parents()
+    workspace_root = pathlib.Path(workspace.root)
+    author = pyrex.config.AuthorConfig.detect(workspace_root)
+    repo = pyrex.config.RepoConfig.detect(workspace_root)
+    experiment = workspace.get_experiments()[experiment_name]
 
-    repository = pyrex.data.Repository.detect(workspace_root)
-    author = pyrex.data.Author.detect(workspace_root)
-
-    experiments_collection = ExperimentsCollection.load(
-        workspace_root.joinpath(workspace.experiments_file)
-    )
-    experiment = experiments_collection[experiment_name]
-
-    extra_files = pyrex.utils.parse_files_from_command(arguments, where=workspace_root)
-    experiment.files + extra_files
-
+    extra_files = pyrex.utils.parse_files_from_command(arguments, where=workspace.root)
+    experiment.files += extra_files
     for file in experiment.files:
         filepath = workspace_root.joinpath(file)
         if not filepath.exists():
             raise InvalidConfigError(
-                "File '{file}' not found in workspace"
+                f"File '{file}' not found in workspace"
             ) from FileNotFoundError
         if not filepath.resolve().is_file():
             raise InvalidConfigError("Only files can be copied") from IsADirectoryError
@@ -75,45 +68,59 @@ def create(output_path, run, yes, experiment_name, arguments):
     output_path = (
         output_path or experiment.output_path or workspace.experiments_output_path
     )
-    # NOTE: actually compiling an f-string probably a bad idea, hence use of replace
     output_path = pathlib.Path(
-        output_path.replace("{workspace_root}", workspace.root)
+        str(output_path)
+        .replace("{workspace_root}", workspace.root)
         .replace("{workspace_name}", workspace.name)
         .replace("{version}", workspace.version)
-        .replace("{repo_root}", repository.root)
-        .replace("{repo_name}", repository.name)
-        .replace("{branch}", repository.branch)
-        .replace("{experiment_name}", experiment_name)
+        .replace("{repo_root}", repo.root)
+        .replace("{repo_name}", repo.name)
+        .replace("{branch}", repo.branch)
+        .replace("{author}", author.name)
+        .replace("{name}", experiment_name)
     )
     if not output_path.is_absolute():
         raise InvalidPathError(f"Output path '{output_path}' is not absolute")
-
-    if not output_path.is_relative_to(repository.root):
+    if not output_path.is_relative_to(repo.root):
         log.warning(
             "Output path '%s' is not in the same git repository as the workspace '%s'"
-            % (output_path, workspace.root)
+            % (output_path, str(workspace.root))
         )
-    path = pyrex.data.Path.compute(
-        output_path.joinpath("dummy"), workspace.root, repository.root
-    )
+    experiment.output_path = str(output_path)
 
     experiment.commands = [
-        command.replace("{workspace}", path.to_workspace_root).replace(
-            "{posargs}", arguments
-        )
+        command.replace(
+            "{workspace}",
+            pyrex.utils.compute_relative_path(
+                output_path.joinpath("dummy"), workspace.root
+            ),
+        ).replace("{posargs}", arguments)
         for command in experiment.commands
     ]
 
-    output = OutputConfig(
-        author=author,
-        path=path,
-        repository=repository,
-        experiment=experiment,
-        workspace=workspace,
+    dummy_path = pathlib.Path(output_path).joinpath("dummy")
+    path_to_workspace_root = pyrex.utils.compute_relative_path(
+        from_=dummy_path, to=workspace.root
+    )
+    path_to_repo_root = pyrex.utils.compute_relative_path(
+        from_=dummy_path, to=repo.root
     )
 
-    click.echo(output)
-    click.echo(output_path)
+    template = pyrex.utils.get_template(
+        experiment.template or workspace.experiments_template,
+        type_="experiment",
+    )
+
+    summary = pyrex.config.ExperimentSummary(
+        author=author,
+        experiment=experiment,
+        repo=repo,
+        workspace=workspace,
+        path_to_workspace_root=path_to_workspace_root,
+        path_to_repo_root=path_to_repo_root,
+    )
+
+    click.echo(summary)
     if not yes:
         click.confirm(
             "Confirm",
@@ -123,11 +130,11 @@ def create(output_path, run, yes, experiment_name, arguments):
             abort=True,
         )
 
-    extra_context = {f"_{key}": val for key, val in dataclasses.asdict(output).items()}
+    extra_context = {f"_{key}": val for key, val in dataclasses.asdict(summary).items()}
     experiment_root = cookiecutter(
-        template=experiment.template.template,
-        checkout=experiment.template.checkout,
-        directory=experiment.template.directory,
+        template=template.template,
+        checkout=template.checkout,
+        directory=template.directory,
         output_dir=str(output_path),
         extra_context=extra_context,
         no_input=True,
@@ -138,7 +145,7 @@ def create(output_path, run, yes, experiment_name, arguments):
         experiment_root.joinpath(file).parent.mkdir(exist_ok=True, parents=True)
         shutil.copy(workspace_root / file, experiment_root / file)
 
-    output.dump(experiment_root)
+    summary.dump(experiment_root)
     # TODO dump log as well
 
     click.echo("Commands to run:")

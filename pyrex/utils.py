@@ -1,45 +1,113 @@
 from __future__ import annotations
 
+import io
 import itertools
+import logging
 import pathlib
 import os
 import shutil
 import subprocess
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import click
+import yaml
 
-from pyrex.exceptions import GitError
+import pyrex.config
+from pyrex.exceptions import GitError, InvalidTemplateError, InvalidConfigError
+
+log = logging.getLogger(__name__)
 
 
-def compute_relative_paths(
-    path: Union[str, os.PathLike], reference: Union[str, os.PathLike]
+def get_template(spec: str, type_: str = "experiment") -> pyrex.config.TemplateConfig:
+    if type_ in ["workspace", "w"]:
+        templates = pyrex.config.WorkspaceTemplateConfigCollection.load()
+    elif type_ in ["experiment", "e"]:
+        templates = pyrex.config.ExperimentTemplateConfigCollection.load()
+    else:
+        raise ValueError
+
+    # First, try to use spec as key for saved template
+    try:
+        template = templates[spec]
+    except (TypeError, KeyError):
+        pass
+    else:
+        return template
+
+    # Second, see if spec is a valid path
+    try:
+        spec_as_path = pathlib.Path(spec)
+    except TypeError:
+        pass
+    else:
+        if spec_as_path.is_dir():
+            return pyrex.config.TemplateConfig(str(spec_as_path.resolve()))
+
+    # Finally, see if spec is a mapping
+    try:
+        return pyrex.config.TemplateConfig(**spec)
+    except TypeError:
+        pass
+
+    raise InvalidTemplateError
+
+
+def load_config(
+    filepath: Union[str, os.PathLike],
+    loader: Callable[io.TextIOWrapper, dict] = yaml.safe_load,
+) -> Union[list[dict], dict]:
+    try:
+        with open(filepath, "r") as file:
+            contents = loader(file)
+    except Exception as exc:
+        raise InvalidConfigError(f"Failed to load config from '{filepath}'") from exc
+    else:
+        if not any(contents):
+            log.warning("Loaded an empty configuration file from %s" % filepath)
+        return contents
+
+
+def dump_config(
+    contents: Union[list[dict], dict],
+    filepath: Union[str, os.PathLike],
+    dumper: Callable[dict, str] = lambda c: yaml.safe_dump(c, indent=4),
+) -> None:
+    if not any(contents):
+        log.warning("Dumping an empty configuration to %s" % filepath)
+    try:
+        contents_str = dumper(contents)
+    except (TypeError, OverflowError) as exc:
+        raise InvalidConfigError(
+            "Data serialization failed! Config will *not* be written to file."
+        ) from exc
+    else:
+        with open(filepath, "w") as file:
+            file.write(contents_str)
+
+
+def compute_relative_path(
+    from_: Union[str, os.PathLike], to: Union[str, os.PathLike]
 ) -> tuple[str, str]:
-    path = pathlib.Path(path).resolve()
-    reference = pathlib.Path(reference).resolve()
+    from_ = pathlib.Path(from_).resolve()
+    to = pathlib.Path(to).resolve()
 
     # NOTE: inner loop is through path.parents
     common_parent = None
-    for r, p in itertools.product(
-        reference.joinpath("dummy").parents, path.joinpath("dummy").parents
+    for t, f in itertools.product(
+        to.joinpath("dummy").parents, from_.joinpath("dummy").parents
     ):
-        if r == p:
-            common_parent = r
+        if t == f:
+            common_parent = t
             break
     assert common_parent is not None
 
-    from_reference = (
+    path = (
         pathlib.Path(".")
-        .joinpath(*[".." for _ in reference.relative_to(common_parent).parts])
-        .joinpath(path.relative_to(common_parent))
-    )
-    to_reference = (
-        pathlib.Path(".")
-        .joinpath(*[".." for _ in path.relative_to(common_parent).parts])
-        .joinpath(reference.relative_to(common_parent))
+        .joinpath(*[".." for _ in from_.relative_to(common_parent).parts])
+        .joinpath(to.relative_to(common_parent))
     )
 
-    return str(from_reference), str(to_reference)
+    return str(path)
 
 
 def prompt_for_name(

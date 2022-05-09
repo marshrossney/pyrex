@@ -6,13 +6,11 @@ from pyrex.scripts.experiment import create
 from pyrex.scripts.templates import templates
 from pyrex.scripts.workspace import workspace
 
-# from pyrex.scripts.workspace import workspace
-
 
 @click.group
 def cli():
+    """A tool to facilitate the production of reproducible experiments."""
     pass
-    # TODO is it super smart or super dumb to assign ctx.obj as a loaded input config?
 
 
 cli.add_command(create)

@@ -5,9 +5,11 @@ import dataclasses
 import click
 from cookiecutter.main import cookiecutter
 
-from pyrex.config import InputConfig, WorkspaceTemplatesCollection
+from pyrex.config import (
+    WorkspaceInput,
+    WorkspaceTemplateConfigCollection,
+)
 from pyrex.exceptions import InvalidWorkspaceError
-from pyrex.utils import prompt_for_name
 
 
 @click.group("workspace")
@@ -22,7 +24,7 @@ def workspace():
 )
 def create(name):
     """Create a new workspace from a template"""
-    templates = WorkspaceTemplatesCollection.load()
+    templates = WorkspaceTemplateConfigCollection.load()
     template = templates[name]
     click.echo(template)
     click.confirm(
@@ -36,7 +38,7 @@ def create(name):
 def info():
     """Display information about the current workspace"""
     try:
-        click.echo(str(InputConfig.search_parents()))
+        click.echo(str(WorkspaceInput.search_parents()))
     except InvalidWorkspaceError as exc:
         click.echo(exc)
 

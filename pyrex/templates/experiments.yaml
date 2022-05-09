@@ -1,3 +1,7 @@
 base:
-    template: https://github.com/marshrossney/pyrex-workspaces
     checkout: experiments/base
+    template: https://github.com/marshrossney/pyrex-workspaces
+james:
+    checkout: null
+    directory: null
+    template: /home/joe/reproducibility_code/pyrex-templates
