@@ -1,55 +1,61 @@
 from __future__ import annotations
 
+import dataclasses
+
 import click
+from cookiecutter.main import cookiecutter
+
+from pyrex.config import (
+    WorkspaceInput,
+    WorkspaceTemplateConfigCollection,
+)
+from pyrex.exceptions import InvalidWorkspaceError
 
 
-@click.group()
+@click.group("workspace")
 def workspace():
     pass
 
 
 @workspace.command()
-@click.option(
-    "--version",
-    prompt=True,
-    type=click.STRING,
-    default="0.1.0",
-    help="Attribute a version to the workspace",
-)
-@click.option(
-    "--named-experiments-path",
-    prompt="Default path for named experiments",
-    type=click.STRING,
-    default="{branch}/{version}/{name}/{timestamp}",
-    help="Default path for named experiments",
-)
-@click.option(
-    "--unnamed-experiments-path",
-    prompt="Default path for unnamed experiments",
-    type=click.STRING,
-    default="{branch}/{version}/unnamed/{timestamp}",
-    help="Default path for named experiments",
-)
-def init(version, named_experiment_path, unnamed_experiments_path):
-    pass
-
-
-@workspace.command()
 @click.argument(
-    "template",
+    "name",
     type=click.STRING,
 )
-def create(template):
-    pass
+def create(name):
+    """Create a new workspace from a template"""
+    templates = WorkspaceTemplateConfigCollection.load()
+    template = templates[name]
+    click.echo(template)
+    click.confirm(
+        "Confirm", prompt_suffix="?", default="yes", show_default=True, abort=True
+    )
+    workspace = cookiecutter(**dataclasses.asdict(template))
+    click.echo(f"Workspace created at f{workspace}")
 
 
 @workspace.command()
-def config():
-    pass
+def info():
+    """Display information about the current workspace"""
+    try:
+        click.echo(str(WorkspaceInput.search_parents()))
+    except InvalidWorkspaceError as exc:
+        click.echo(exc)
 
-    # workspace = api.Workspace.search_parents()
-    # workspace_config = workspace.load_config()
+
+@workspace.command()
+def init():
+    """Initialise a PyREx workspace in the current working directory"""
+    # TODO interactively generate a workspace
+    raise NotImplementedError
 
 
-if __name__ == "__main__":
+@workspace.command()
+def add_exp():
+    """Add a named experiment to the current workspace."""
+    # TODO interactively generate an experiment config
+    raise NotImplementedError
+
+
+if __name__ == "__workspace__":
     workspace()

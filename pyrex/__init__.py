@@ -1,2 +1,3 @@
-from pyrepcon.workspace import Workspace
-from pyrepcon.templates import Template, Templates
+import importlib.metadata
+
+__version__ = importlib.metadata.version("pyrex")

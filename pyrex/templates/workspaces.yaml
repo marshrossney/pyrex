@@ -1,0 +1,3 @@
+base:
+    checkout: workspaces/base
+    template: https://github.com/marshrossney/pyrex-templates

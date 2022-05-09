@@ -1,32 +1,55 @@
 from __future__ import annotations
 
 import click
-from slugify import slugify
 
-import pyrepcon.templates
-
-_templates = pyrepcon.templates.Templates()
+from pyrex.config import (
+    TemplateConfig,
+    WorkspaceTemplateConfigCollection,
+    ExperimentTemplateConfigCollection,
+)
+from pyrex.utils import prompt_for_name
 
 
 @click.group()
-def templates():
-    pass
+@click.option(
+    "-w/-e",
+    "select",
+    default=None,
+    callback=lambda ctx, param, opt: None if opt is None else ("w" if opt else "e"),
+    help="Select workspace (-w) or experiment (-e) templates",
+)
+@click.pass_context
+def templates(ctx, select: click.STRING):
+    ctx.ensure_object(dict)
+    if select is None:
+        select = click.prompt(
+            "Select workspace (w) or experiment (e) templates",
+            type=click.Choice(["w", "e"]),
+        )
+    if select == "w":
+        ctx.obj["TEMPLATES"] = WorkspaceTemplateConfigCollection.load()
+    elif select == "e":
+        ctx.obj["TEMPLATES"] = ExperimentTemplateConfigCollection.load()
 
 
 @templates.command()
-def list():
+@click.pass_context
+def list(ctx):
     """List saved templates"""
-    click.echo(str(_templates))
+    click.echo(ctx.obj["TEMPLATES"])
 
 
 @templates.command()
 @click.argument(
     "name",
-    type=click.Choice(_templates.names),
+    type=click.STRING,
 )
-def remove(name):
+@click.pass_context
+def remove(ctx, name: click.STRING):
     """Remove a template from saved templates file"""
-    _templates.remove(name)
+    del ctx.obj["TEMPLATES"][name]
+    ctx.obj["TEMPLATES"].dump()
+    click.echo(f"Successfully removed template: {name}")
 
 
 @templates.command()
@@ -34,15 +57,23 @@ def remove(name):
     "path",
     type=click.Path(exists=True, file_okay=False, resolve_path=True),
 )
-def add_path(path):
+@click.option(
+    "-n",
+    "--name",
+    type=click.STRING,
+    help="Name to associate with template",
+)
+@click.pass_context
+def add_path(ctx, path, name):
     """Add a local path to a template"""
-    template = pyrepcon.templates.Template(path)
+    template = TemplateConfig(template=path)
     template.validate()
-    name = click.prompt("Name this template", type=click.STRING)
-    _templates.add(slugify(name), template)
+    name = prompt_for_name(init_name=name, existing_names=ctx.obj["TEMPLATES"].keys)
+    ctx.obj["TEMPLATES"][name] = template
+    ctx.obj["TEMPLATES"].dump()
+    click.echo(f"Successfully added template: {name}!")
 
 
-# TODO: allow user to specify extra context for template
 @templates.command()
 @click.argument(
     "url",
@@ -52,7 +83,7 @@ def add_path(path):
     "--checkout",
     type=click.STRING,
     prompt=True,
-    default="",
+    default=None,
     show_default=True,
     callback=lambda ctx, param, opt: opt or None,
     help="Branch, tag, or commit to checkout",
@@ -61,20 +92,26 @@ def add_path(path):
     "--directory",
     type=click.STRING,
     prompt=True,
-    default="",
+    default=None,
     show_default=True,
     callback=lambda ctx, param, opt: opt or None,
     help="Directory containing the template",
 )
-def add_repo(url, checkout, directory):
+@click.option(
+    "-n",
+    "--name",
+    type=click.STRING,
+    help="Name to associate with template",
+)
+@click.pass_context
+def add_repo(ctx, url, checkout, directory, name):
     """Add a remote git repository containing a template"""
-    template = pyrepcon.templates.Template(url, checkout, directory)
+    template = TemplateConfig(template=url, checkout=checkout, directory=directory)
     template.validate()
-
-    name = click.prompt("Name this template", type=click.STRING)
-
-    _templates.add(slugify(name), template)
-    click.echo(f"Added template {name} : {template}")
+    name = prompt_for_name(init_name=name, existing_names=ctx.obj["TEMPLATES"].keys())
+    ctx.obj["TEMPLATES"][name] = template
+    ctx.obj["FILE"].dump()
+    click.echo(f"Successfully added template: {name}!")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,0 @@
-{
-      "python": {
-            "template": "https://github.com/marshrossney/pyrex-templates.git",
-            "checkout": "python-poetry"
-      }
-}
